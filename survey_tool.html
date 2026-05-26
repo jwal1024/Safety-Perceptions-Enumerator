@@ -1865,6 +1865,13 @@
         };
     }
 
+    function getWardDisplayName(wardInfo, fallback = "") {
+        if (wardInfo?.ward_no !== null && wardInfo?.ward_no !== undefined && wardInfo.ward_no !== "") {
+            return `Ward ${wardInfo.ward_no}`;
+        }
+        return wardInfo?.ward_label || fallback;
+    }
+
     function surveyHeaders() {
         return [
             "response_id",
@@ -1878,13 +1885,12 @@
             "screen_size",
             "network_status",
             "user_agent",
-            "type",
-            "feature_id",
-            "feature_name",
-            "parent_id",
-            "parent_name",
+            "feature_type",
             "province",
             "district",
+            "municipality",
+            "ward",
+            "feature_id",
             "knowledge",
             "safety"
         ];
@@ -1911,11 +1917,10 @@
                 metadata.user_agent,
                 "region",
                 name,
+                "",
+                "",
+                "",
                 name,
-                "",
-                "",
-                name,
-                "",
                 data.knowledge,
                 data.safety
             ]);
@@ -1936,12 +1941,11 @@
                 metadata.network_status,
                 metadata.user_agent,
                 "municipality",
-                id,
-                info.municipality_name || id,
-                "",
-                "",
                 info.province_name || "",
                 info.district_name || "",
+                info.municipality_name || id,
+                "",
+                id,
                 data.knowledge,
                 data.safety
             ]);
@@ -1962,12 +1966,11 @@
                 metadata.network_status,
                 metadata.user_agent,
                 "ward",
-                id,
-                wardInfo.ward_label || data.ward_label || id,
-                data.municipality_id || wardInfo.municipality_id || "",
-                data.municipality_name || wardInfo.municipality_name || "",
                 wardInfo.province_name || "",
                 wardInfo.district_name || "",
+                data.municipality_name || wardInfo.municipality_name || "",
+                getWardDisplayName(wardInfo, data.ward_label || id),
+                id,
                 data.knowledge,
                 data.safety
             ]);
