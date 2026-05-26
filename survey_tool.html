@@ -211,7 +211,19 @@
             gap: 12px;
         }
 
+        #wardPanelContent {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
         #municipalityList {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+        }
+
+        #wardList {
             flex: 1;
             min-height: 0;
             overflow-y: auto;
@@ -233,12 +245,37 @@
             border-radius: 4px;
             margin-bottom: 10px;
             background: #fafafa;
+            cursor: pointer;
+            transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .municipality-item.is-selected {
+            border-color: #3498db;
+            background: #eef7ff;
+            box-shadow: inset 0 0 0 1px rgba(52, 152, 219, 0.22);
         }
 
         .municipality-name {
             font-weight: 600;
             margin-bottom: 6px;
             color: #2c3e50;
+        }
+
+        .ward-group + .ward-group {
+            margin-top: 16px;
+        }
+
+        .ward-group-title {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            padding: 8px 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            background: #edf2f7;
+            color: #2c3e50;
+            font-size: 13px;
+            font-weight: 700;
         }
 
         .municipality-meta {
@@ -566,14 +603,17 @@
             </div>
             <div class="panel">
                 <div class="panel-header">Ward-Level Details</div>
-                <div class="panel-content" id="wardList">
+                <div class="panel-content" id="wardPanelContent">
                     <div class="rating-guidance">
                         <p><strong>Knowledge:</strong> How confident are you in describing the safety of this area?</p>
                         <p>If you have lived or worked in this area answer 7 or higher. If you have visited the area on at least one occassion answer 3 or higher.</p>
                         <p><strong>Safety:</strong> Suppose you were an average <strong>person of the same gender</strong> around the <strong>age of 25</strong>. Based on your knowledge of the area, how comfortable would you feel walking around this neighbourhood/ward alone?</p>
                         <p>Where 0 is you would feel very unsafe (even during the middle of the day you would never want to go to this place), 5 is the average across South Africa, and 10 is you would feel perfectly safe (walking around with jewlery visible and your headphones on).</p>
                     </div>
-                    <p style="color: #7f8c8d;">Select a ward on the map to enter ratings.</p>
+                    <div id="wardList">
+                        <div class="loader"></div>
+                        Loading ward data...
+                    </div>
                 </div>
             </div>
         </div>
@@ -594,18 +634,14 @@
                     <p><strong>Ward Records:</strong> <span id="wardCount">0</span></p>
                     <p><strong>Total Records:</strong> <span id="totalCount">0</span></p>
                 </div>
-                <div class="warning">If this phone is online, you can send the survey straight to Google Sheets. If not, download the file and send it later.</div>
-                <div class="warning submission-status" id="submissionStatusBox">Google Sheets submission is not configured yet.</div>
+                <div class="submission-status" id="submissionStatusBox"></div>
                 <div class="button-group">
-                    <button class="btn-success" id="submitSurveyButton" onclick="submitSurveyToGoogleSheets()">Send to Google Sheets</button>
+                    <button class="btn-success" id="submitSurveyButton" onclick="submitSurveyToGoogleSheets()">Submit</button>
                 </div>
                 <p style="color: #555; margin-bottom: 15px;">Choose export format:</p>
                 <div class="button-group">
                     <button class="btn-primary" onclick="exportAsCSV()">Download as CSV</button>
                     <button class="btn-primary" onclick="exportAsJSON()">Download as JSON</button>
-                </div>
-                <div class="button-group" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #ecf0f1;">
-                    <button class="btn-secondary" onclick="startNewSurvey()">Start New Survey</button>
                 </div>
             </div>
         </div>
@@ -665,6 +701,9 @@
         regionLayer: null,
         municipalityLayer: null,
         wardLayer: null,
+        wardLayerById: {},
+        selectedRegionName: "",
+        selectedMunicipalityId: "",
         selectedWardLayer: null,
         selectedWardId: null,
         wardsPromise: null
@@ -883,6 +922,20 @@
         return state.municipalityGeoJSON.features.filter(feature => idSet.has(feature.properties.municipality_id));
     }
 
+    function selectedWardEntries() {
+        if (!state.wardGeoJSON) return [];
+
+        const municipalitySet = new Set(state.filteredMunicipalities);
+        return state.wardGeoJSON.features
+            .map(feature => feature.properties)
+            .filter(info => municipalitySet.has(info.municipality_id))
+            .sort((a, b) => {
+                const municipalityCompare = a.municipality_name.localeCompare(b.municipality_name);
+                if (municipalityCompare !== 0) return municipalityCompare;
+                return (Number(a.ward_no) || 0) - (Number(b.ward_no) || 0);
+            });
+    }
+
     function clamp(value, min, max) {
         return Math.min(Math.max(value, min), max);
     }
@@ -943,13 +996,14 @@
         const ratings = state.regionData[regionName] || defaultRatings();
         const fillColor = getSafetyFillColor(ratings.safety);
         const fillOpacity = Math.max(0.08, getKnowledgeFillOpacity(ratings.knowledge));
+        const isSelected = regionName === state.selectedRegionName;
 
         return {
-            color: mixHexColors(fillColor, "#1f2d3d", 0.35),
-            weight: regionName === state.region ? 2.2 : 1.4,
-            opacity: Math.max(0.35, getKnowledgeStrokeOpacity(ratings.knowledge)),
+            color: isSelected ? "#0b5cad" : mixHexColors(fillColor, "#1f2d3d", 0.35),
+            weight: isSelected ? 3 : (regionName === state.region ? 2.2 : 1.4),
+            opacity: isSelected ? 1 : Math.max(0.35, getKnowledgeStrokeOpacity(ratings.knowledge)),
             fill: true,
-            fillOpacity,
+            fillOpacity: isSelected ? Math.min(fillOpacity + 0.08, 0.72) : fillOpacity,
             fillColor
         };
     }
@@ -969,13 +1023,14 @@
         const ratings = state.municipalityData[municipalityId] || defaultRatings();
         const fillColor = getSafetyFillColor(ratings.safety);
         const fillOpacity = getKnowledgeFillOpacity(ratings.knowledge);
+        const isSelected = municipalityId === state.selectedMunicipalityId;
 
         return {
-            color: mixHexColors(fillColor, "#1f2d3d", 0.35),
-            weight: 1.6,
-            opacity: getKnowledgeStrokeOpacity(ratings.knowledge),
+            color: isSelected ? "#0b5cad" : mixHexColors(fillColor, "#1f2d3d", 0.35),
+            weight: isSelected ? 2.8 : 1.6,
+            opacity: isSelected ? 1 : getKnowledgeStrokeOpacity(ratings.knowledge),
             fill: true,
-            fillOpacity,
+            fillOpacity: isSelected ? Math.min(fillOpacity + 0.08, 0.72) : fillOpacity,
             fillColor
         };
     }
@@ -1031,6 +1086,20 @@
                 state.municipalityData[info.municipality_id] = defaultRatings();
             }
         });
+    }
+
+    function ensureWardDefaults(wardId) {
+        if (state.wardData[wardId]) return;
+
+        const wardInfo = state.wardIndex[wardId];
+        state.wardData[wardId] = {
+            municipality_id: wardInfo?.municipality_id || "",
+            municipality_name: wardInfo?.municipality_name || "",
+            ward_label: wardInfo?.ward_label || wardId,
+            ward_no: wardInfo?.ward_no || null,
+            knowledge: DEFAULT_KNOWLEDGE_RATING,
+            safety: DEFAULT_SAFETY_RATING
+        };
     }
 
     function buildBounds(boundsArray) {
@@ -1106,6 +1175,8 @@
         state.enumeratorName = normalizeEnumeratorName(document.getElementById("enumeratorName").value);
         state.region = document.getElementById("region").value;
         state.date = document.getElementById("date").value;
+        state.selectedRegionName = state.region;
+        state.selectedMunicipalityId = "";
         ensureResponseId();
 
         if (!state.enumeratorName || !state.region) {
@@ -1197,6 +1268,7 @@
 
         populateMunicipalityList();
         updateStage2MapView();
+        focusStage2MapOnVisibleMunicipalities();
         transitionToStage(2);
         updateStatus(`Ready for municipality ratings in ${state.filteredRegions.length} selected regions`);
     }
@@ -1251,6 +1323,8 @@
             state.wardData = {};
             state.filteredRegions = [];
             state.filteredMunicipalities = [];
+            state.selectedRegionName = state.region;
+            state.selectedMunicipalityId = "";
             state.selectedWardLayer = null;
             state.selectedWardId = null;
             state.highestStageReached = 0;
@@ -1305,6 +1379,81 @@
         map.fitBounds(bounds, { padding, maxZoom });
     }
 
+    function focusStage2MapOnVisibleMunicipalities() {
+        const features = municipalityFeaturesByIds(getVisibleMunicipalityIds());
+        if (features.length === 0) return;
+
+        fitMapToFeatureSubset(state.municipalityMap, features, {
+            maxBoundsPad: 0.02,
+            padding: [12, 12],
+            maxZoom: 8
+        });
+    }
+
+    function setSelectedListItem(containerId, selectedElementId) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        container.querySelectorAll(".municipality-item").forEach(item => {
+            item.classList.toggle("is-selected", item.id === selectedElementId);
+        });
+    }
+
+    function scrollListItemIntoView(elementId) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
+    }
+
+    function syncRegionSelectionState(scrollIntoView = false) {
+        const rowId = state.selectedRegionName ? `region-row-${makeDomSafeKey(state.selectedRegionName)}` : "";
+        setSelectedListItem("regionList", rowId);
+        if (scrollIntoView && rowId) {
+            scrollListItemIntoView(rowId);
+        }
+    }
+
+    function syncMunicipalitySelectionState(scrollIntoView = false) {
+        const rowId = state.selectedMunicipalityId ? `municipality-row-${state.selectedMunicipalityId}` : "";
+        setSelectedListItem("municipalityList", rowId);
+        if (scrollIntoView && rowId) {
+            scrollListItemIntoView(rowId);
+        }
+    }
+
+    function syncWardSelectionState(scrollIntoView = false) {
+        const rowId = state.selectedWardId ? `ward-row-${state.selectedWardId}` : "";
+        setSelectedListItem("wardList", rowId);
+        if (scrollIntoView && rowId) {
+            scrollListItemIntoView(rowId);
+        }
+    }
+
+    function selectRegion(regionName, options = {}) {
+        if (!regionName) return;
+        state.selectedRegionName = regionName;
+        syncRegionSelectionState(Boolean(options.scrollIntoView));
+        updateStage1MapView();
+    }
+
+    function selectMunicipality(municipalityId, options = {}) {
+        if (!municipalityId) return;
+        state.selectedMunicipalityId = municipalityId;
+        syncMunicipalitySelectionState(Boolean(options.scrollIntoView));
+        updateStage2MapView();
+    }
+
+    function selectWardById(wardId, options = {}) {
+        if (!wardId) return;
+
+        ensureWardDefaults(wardId);
+        state.selectedWardId = wardId;
+        state.selectedWardLayer = state.wardLayerById[wardId] || null;
+        syncWardSelectionState(Boolean(options.scrollIntoView));
+        refreshWardLayerStyles();
+    }
+
     function coverageRings(geometry) {
         if (!geometry) return [];
         if (geometry.type === "Polygon") return geometry.coordinates;
@@ -1356,6 +1505,7 @@
                 style: feature => getRegionMapStyle(feature.properties.province_name),
                 onEachFeature: (feature, layer) => {
                     layer.bindPopup(municipalityPopup(feature.properties));
+                    layer.on("click", () => selectRegion(feature.properties.province_name, { scrollIntoView: true }));
                 }
             }).addTo(state.regionMap);
         }
@@ -1369,14 +1519,6 @@
         state.regionLayer.eachLayer(layer => {
             layer.setStyle(getRegionMapStyle(layer.feature.properties.province_name));
         });
-
-        if (state.datasetBounds) {
-            state.regionMap.setMaxBounds(state.datasetBounds.pad(0.08));
-            state.regionMap.fitBounds(state.datasetBounds.pad(0.06), {
-                padding: [20, 20],
-                maxZoom: 6
-            });
-        }
     }
 
     function populateRegionList() {
@@ -1401,7 +1543,7 @@
                 : "";
 
             return `
-                <div class="municipality-item">
+                <div class="municipality-item${info.region_name === state.selectedRegionName ? " is-selected" : ""}" id="region-row-${regionKey}" onclick="selectRegion('${info.region_name}')">
                     <div class="municipality-name">${info.region_name}${homeTag}</div>
                     <div class="municipality-meta">${info.municipality_count} municipalities | ${info.district_count} districts | ${info.ward_count} wards</div>
                     <div class="rating-group">
@@ -1422,6 +1564,7 @@
             `;
         }).join("");
 
+        syncRegionSelectionState();
         updateStage1MapView();
     }
 
@@ -1430,6 +1573,7 @@
             state.regionData[regionName] = defaultRatings();
         }
 
+        selectRegion(regionName);
         state.regionData[regionName][type] = parseInt(value, 10);
         const regionKey = makeDomSafeKey(regionName);
         document.getElementById(`region-${type}-value-${regionKey}`).textContent = value;
@@ -1454,6 +1598,7 @@
                 style: feature => getMunicipalityMapStyle(feature.properties.municipality_id, true),
                 onEachFeature: (feature, layer) => {
                     layer.bindPopup(municipalityPopup(feature.properties));
+                    layer.on("click", () => selectMunicipality(feature.properties.municipality_id, { scrollIntoView: true }));
                 }
             }).addTo(state.municipalityMap);
         }
@@ -1470,14 +1615,6 @@
             const isVisible = visibleIds.has(layer.feature.properties.municipality_id);
             layer.setStyle(getMunicipalityMapStyle(layer.feature.properties.municipality_id, isVisible));
         });
-
-        if (state.datasetBounds) {
-            state.municipalityMap.setMaxBounds(state.datasetBounds.pad(0.08));
-            state.municipalityMap.fitBounds(state.datasetBounds.pad(0.06), {
-                padding: [20, 20],
-                maxZoom: 6
-            });
-        }
     }
 
     function filterMunicipalityList() {
@@ -1496,6 +1633,10 @@
         const visibleIds = new Set(getVisibleMunicipalityIds());
         const municipalities = municipalityEntries().filter(info => visibleIds.has(info.municipality_id));
 
+        if (state.selectedMunicipalityId && !visibleIds.has(state.selectedMunicipalityId)) {
+            state.selectedMunicipalityId = "";
+        }
+
         if (municipalities.length === 0) {
             container.innerHTML = state.filteredRegions.length === 0
                 ? '<p style="color: #7f8c8d;">Select at least one region with knowledge above 5 to continue.</p>'
@@ -1508,7 +1649,7 @@
             const ratings = state.municipalityData[id] || defaultRatings();
 
             return `
-                <div class="municipality-item">
+                <div class="municipality-item${id === state.selectedMunicipalityId ? " is-selected" : ""}" id="municipality-row-${id}" onclick="selectMunicipality('${id}')">
                     <div class="municipality-name">${info.municipality_name}</div>
                     <div class="municipality-meta">${info.province_name} | ${info.district_name} | ${info.ward_count} wards</div>
                     <div class="rating-group">
@@ -1528,6 +1669,8 @@
                 </div>
             `;
         }).join("");
+
+        syncMunicipalitySelectionState();
     }
 
     function updateMunicipalityRating(municipalityId, type, value) {
@@ -1535,6 +1678,7 @@
             state.municipalityData[municipalityId] = defaultRatings();
         }
 
+        selectMunicipality(municipalityId);
         state.municipalityData[municipalityId][type] = parseInt(value, 10);
         document.getElementById(`${type}-value-${municipalityId}`).textContent = value;
         if (type === "knowledge") {
@@ -1552,15 +1696,7 @@
     }
 
     function resetWardPanel() {
-        document.getElementById("wardList").innerHTML = `
-            <div class="rating-guidance">
-                <p><strong>Knowledge:</strong> How confident are you in describing the safety of this area?</p>
-                <p>If you have lived or worked in this area answer 7 or higher. If you have visited the area on at least one occassion answer 3 or higher.</p>
-                <p><strong>Safety:</strong> Suppose you were an average <strong>person of the same gender</strong> around the <strong>age of 25</strong>. Based on your knowledge of the area, how comfortable would you feel walking around this neighbourhood/ward alone?</p>
-                <p>Where 0 is you would feel very unsafe (even during the middle of the day you would never want to go to this place), 5 is the average across South Africa, and 10 is you would feel perfectly safe (walking around with jewlery visible and your headphones on).</p>
-            </div>
-            <p style="color: #7f8c8d;">Select a ward on the map to enter ratings.</p>
-        `;
+        document.getElementById("wardList").innerHTML = '<p style="color: #7f8c8d;">Select a municipality in Stage 2, then rate its wards here.</p>';
     }
 
     function initializeStage3Map() {
@@ -1568,6 +1704,73 @@
 
         state.wardMap = createBaseMap("map-stage3");
         resetWardPanel();
+    }
+
+    function populateWardList() {
+        const container = document.getElementById("wardList");
+
+        if (!state.wardGeoJSON) {
+            container.innerHTML = '<p style="color: #7f8c8d;">Ward data is not available.</p>';
+            return;
+        }
+
+        const wards = selectedWardEntries();
+        if (state.selectedWardId && !wards.some(info => info.ward_id === state.selectedWardId)) {
+            state.selectedWardId = null;
+            state.selectedWardLayer = null;
+        }
+
+        if (wards.length === 0) {
+            container.innerHTML = '<p style="color: #7f8c8d;">No wards are available for the selected municipalities yet.</p>';
+            return;
+        }
+
+        const groupedWards = wards.reduce((groups, info) => {
+            const key = info.municipality_id;
+            if (!groups[key]) {
+                groups[key] = {
+                    municipality_id: info.municipality_id,
+                    municipality_name: info.municipality_name,
+                    province_name: info.province_name,
+                    district_name: info.district_name,
+                    wards: []
+                };
+            }
+            groups[key].wards.push(info);
+            return groups;
+        }, {});
+
+        container.innerHTML = Object.values(groupedWards).map(group => `
+            <div class="ward-group">
+                <div class="ward-group-title">${group.municipality_name} | ${group.province_name} | ${group.district_name}</div>
+                ${group.wards.map(info => {
+                    ensureWardDefaults(info.ward_id);
+                    const wardInfo = state.wardData[info.ward_id] || defaultRatings();
+                    return `
+                        <div class="municipality-item${info.ward_id === state.selectedWardId ? " is-selected" : ""}" id="ward-row-${info.ward_id}" onclick="selectWardById('${info.ward_id}')">
+                            <div class="municipality-name">Ward ${info.ward_no} (${info.ward_label})</div>
+                            <div class="municipality-meta">${info.municipality_name}</div>
+                            <div class="rating-group">
+                                <div class="rating-input">
+                                    <label for="ward-knowledge-${info.ward_id}">Knowledge (0-10)</label>
+                                    <input type="range" id="ward-knowledge-${info.ward_id}" min="0" max="10" value="${wardInfo.knowledge}"
+                                           oninput="updateWardRating('${info.ward_id}', 'knowledge', this.value)">
+                                    <span class="rating-value" id="ward-knowledge-value-${info.ward_id}">${wardInfo.knowledge}</span>
+                                </div>
+                                <div class="rating-input">
+                                    <label for="ward-safety-${info.ward_id}">Safety (0-10)</label>
+                                    <input type="range" id="ward-safety-${info.ward_id}" min="0" max="10" value="${wardInfo.safety}" ${safetyInputState(wardInfo.knowledge)}
+                                           oninput="updateWardRating('${info.ward_id}', 'safety', this.value)">
+                                    <span class="rating-value" id="ward-safety-value-${info.ward_id}">${wardInfo.safety}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join("")}
+            </div>
+        `).join("");
+
+        syncWardSelectionState();
     }
 
     function updateStage3Map() {
@@ -1578,9 +1781,10 @@
             state.wardLayer = null;
         }
 
+        state.wardLayerById = {};
         state.selectedWardLayer = null;
         state.selectedWardId = null;
-        resetWardPanel();
+        populateWardList();
 
         const municipalitySet = new Set(state.filteredMunicipalities);
         const selectedMunicipalityFeatures = municipalityFeaturesByIds(state.filteredMunicipalities);
@@ -1592,11 +1796,12 @@
             style: feature => getWardMapStyle(feature.properties.ward_id, false),
             onEachFeature: (feature, layer) => {
                 const info = feature.properties;
+                state.wardLayerById[info.ward_id] = layer;
                 layer.bindPopup(`
                     <strong>${info.municipality_name}</strong><br>
                     Ward ${info.ward_no} (${info.ward_label})
                 `);
-                layer.on("click", () => selectWard(feature, layer));
+                layer.on("click", () => selectWardById(info.ward_id, { scrollIntoView: true }));
             }
         }).addTo(state.wardMap);
 
@@ -1607,75 +1812,10 @@
         });
     }
 
-    function selectWard(feature, layer) {
-        const info = feature.properties;
-        const wardId = info.ward_id;
-
-        if (state.selectedWardLayer && state.selectedWardLayer !== layer) {
-            state.selectedWardLayer.setStyle(getWardMapStyle(state.selectedWardId, false));
-        }
-
-        state.selectedWardLayer = layer;
-        state.selectedWardId = wardId;
-        layer.setStyle(getWardMapStyle(wardId, true));
-
-        if (!state.wardData[wardId]) {
-            state.wardData[wardId] = {
-                municipality_id: info.municipality_id,
-                municipality_name: info.municipality_name,
-                ward_label: info.ward_label,
-                ward_no: info.ward_no,
-                knowledge: DEFAULT_KNOWLEDGE_RATING,
-                safety: DEFAULT_SAFETY_RATING
-            };
-        }
-
-        const wardInfo = state.wardData[wardId];
-        const container = document.getElementById("wardList");
-        container.innerHTML = `
-            <div class="rating-guidance">
-                <p><strong>Knowledge:</strong> How confident are you in describing the safety of this area?</p>
-                <p>If you have lived or worked in this area answer 7 or higher. If you have visited the area on at least one occassion answer 3 or higher.</p>
-                <p><strong>Safety:</strong> Suppose you were an average <strong>person of the same gender</strong> around the <strong>age of 25</strong>. Based on your knowledge of the area, how comfortable would you feel walking around this neighbourhood/ward alone?</p>
-                <p>Where 0 is you would feel very unsafe (even during the middle of the day you would never want to go to this place), 5 is the average across South Africa, and 10 is you would feel perfectly safe (walking around with jewlery visible and your headphones on).</p>
-            </div>
-            <div style="margin-bottom: 20px;">
-                <strong>${info.municipality_name}</strong>
-                <p style="color: #7f8c8d; font-size: 12px; margin-top: 5px;">Ward ${info.ward_no} (${info.ward_label})</p>
-                <p style="color: #7f8c8d; font-size: 12px; margin-top: 5px;">${info.province_name} | ${info.district_name}</p>
-            </div>
-            <div class="rating-group" style="display: block;">
-                <div class="rating-input" style="margin-bottom: 20px;">
-                    <label for="ward-knowledge-${wardId}">Knowledge (0-10)</label>
-                    <input type="range" id="ward-knowledge-${wardId}" min="0" max="10" value="${wardInfo.knowledge}"
-                           oninput="updateWardRating('${wardId}', 'knowledge', this.value)">
-                    <span class="rating-value" id="ward-knowledge-value-${wardId}">${wardInfo.knowledge}</span>
-                </div>
-                <div class="rating-input">
-                    <label for="ward-safety-${wardId}">Safety (0-10)</label>
-                    <input type="range" id="ward-safety-${wardId}" min="0" max="10" value="${wardInfo.safety}" ${safetyInputState(wardInfo.knowledge)}
-                           oninput="updateWardRating('${wardId}', 'safety', this.value)">
-                    <span class="rating-value" id="ward-safety-value-${wardId}">${wardInfo.safety}</span>
-                </div>
-            </div>
-        `;
-
-        saveToLocalStorage();
-    }
-
     function updateWardRating(wardId, type, value) {
-        if (!state.wardData[wardId]) {
-            const wardInfo = state.wardIndex[wardId];
-            state.wardData[wardId] = {
-                municipality_id: wardInfo?.municipality_id || "",
-                municipality_name: wardInfo?.municipality_name || "",
-                ward_label: wardInfo?.ward_label || wardId,
-                ward_no: wardInfo?.ward_no || null,
-                knowledge: DEFAULT_KNOWLEDGE_RATING,
-                safety: DEFAULT_SAFETY_RATING
-            };
-        }
+        ensureWardDefaults(wardId);
 
+        selectWardById(wardId);
         state.wardData[wardId][type] = parseInt(value, 10);
 
         const valueEl = document.getElementById(`ward-${type}-value-${wardId}`);
@@ -1840,14 +1980,14 @@
         submitButton.disabled = !isGoogleSheetsConfigured() || state.isSubmitting;
 
         if (!isGoogleSheetsConfigured()) {
-            statusBox.className = "warning submission-status";
-            statusBox.textContent = "Google Sheets submission is not configured yet. Add the Apps Script web app URL in survey_config.js.";
+            statusBox.className = "rating-guidance submission-status";
+            statusBox.textContent = "Submission is unavailable right now.";
             return;
         }
 
         if (state.isSubmitting) {
-            statusBox.className = "warning submission-status";
-            statusBox.textContent = "Sending data to Google Sheets...";
+            statusBox.className = "rating-guidance submission-status";
+            statusBox.textContent = "Submitting survey...";
             return;
         }
 
@@ -1857,20 +1997,20 @@
             return;
         }
 
-        statusBox.className = "warning submission-status";
-        statusBox.textContent = "Google Sheets submission is ready. If the connection is poor, you can still download CSV or JSON below.";
+        statusBox.className = "rating-guidance submission-status";
+        statusBox.textContent = "Ready to submit.";
     }
 
     async function submitSurveyToGoogleSheets() {
         if (state.isSubmitting) return;
 
         if (!navigator.onLine) {
-            alert("This phone is offline. Connect to the internet before sending to Google Sheets.");
+            alert("This phone is offline. Connect to the internet before submitting.");
             return;
         }
 
         if (!isGoogleSheetsConfigured()) {
-            alert("Google Sheets submission is not configured yet. Update survey_config.js first.");
+            alert("Submission is not configured yet.");
             return;
         }
 
@@ -1881,7 +2021,7 @@
         state.lastSubmissionMessage = "";
         state.lastSubmissionSucceeded = false;
         renderSubmissionPanel();
-        updateStatus("Sending data to Google Sheets...");
+        updateStatus("Submitting survey...");
 
         try {
             await fetch(appUrl, {
@@ -1894,15 +2034,15 @@
             });
 
             state.lastSubmissionSucceeded = true;
-            state.lastSubmissionMessage = "Submission request sent to Google Sheets. If you are unsure whether it arrived, download the CSV as a backup.";
+            state.lastSubmissionMessage = "Submission sent. You can still download CSV or JSON below if you want a local copy.";
             saveToLocalStorage();
-            updateStatus("Submission request sent");
+            updateStatus("Submission sent");
         } catch (error) {
             console.error(error);
             state.lastSubmissionSucceeded = false;
-            state.lastSubmissionMessage = `Could not send to Google Sheets: ${error.message}`;
+            state.lastSubmissionMessage = `Could not submit: ${error.message}`;
             updateStatus(`Submission failed: ${error.message}`);
-            alert(`Could not send to Google Sheets: ${error.message}`);
+            alert(`Could not submit: ${error.message}`);
         } finally {
             state.isSubmitting = false;
             renderSubmissionPanel();
@@ -1979,12 +2119,16 @@
                 state.municipalityData = {};
                 state.wardData = {};
                 state.filteredRegions = [];
+                state.filteredMunicipalities = [];
+                state.selectedRegionName = state.region;
+                state.selectedMunicipalityId = "";
                 state.selectedWardLayer = null;
                 state.selectedWardId = null;
                 ensureRegionDefaults();
                 ensureMunicipalityDefaults();
                 populateRegionList();
                 populateMunicipalityList();
+                populateWardList();
                 updateStage1MapView();
                 updateStage2MapView();
                 resetWardPanel();
@@ -2014,6 +2158,7 @@
                 state.wardData = data.wardData || {};
                 state.enumeratorName = data.enumeratorName || data.enumeratorId || "";
                 state.region = data.region || "";
+                state.selectedRegionName = data.region || "";
                 state.date = data.date || state.date;
                 state.highestStageReached = Number.isFinite(data.highestStageReached) ? data.highestStageReached : 0;
                 state.lastSubmissionMessage = data.lastSubmissionMessage || "";
