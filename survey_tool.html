@@ -549,7 +549,6 @@
                         <p><strong>Knowledge:</strong> How confident are you in describing the safety of this area?</p>
                         <p>If you have lived or worked in this area answer 7 or higher. If you have visited the area on at least one occassion answer 3 or higher.</p>
                         <p><strong>Safety:</strong> Suppose you were an average <strong>person of the same gender</strong> around the <strong>age of 25</strong>. Based on your knowledge of the area, how comfortable would you feel walking around this neighbourhood/ward alone?</p>
-                        <p>Where 0 is you would feel very unsafe (even during the middle of the day you would never want to go to this place), 5 is the average across South Africa, and 10 is you would feel perfectly safe (walking around with jewlery visible and your headphones on).</p>
                     </div>
                     <div id="regionList">
                         <div class="loader"></div>
@@ -577,7 +576,6 @@
                         <p><strong>Knowledge:</strong> How confident are you in describing the safety of this area?</p>
                         <p>If you have lived or worked in this area answer 7 or higher. If you have visited the area on at least one occassion answer 3 or higher.</p>
                         <p><strong>Safety:</strong> Suppose you were an average <strong>person of the same gender</strong> around the <strong>age of 25</strong>. Based on your knowledge of the area, how comfortable would you feel walking around this neighbourhood/ward alone?</p>
-                        <p>Where 0 is you would feel very unsafe (even during the middle of the day you would never want to go to this place), 5 is the average across South Africa, and 10 is you would feel perfectly safe (walking around with jewlery visible and your headphones on).</p>
                     </div>
                     <div class="list-toolbar">
                         <input type="search" id="municipalitySearch" placeholder="Filter by municipality, region, or district" oninput="filterMunicipalityList()">
@@ -608,7 +606,6 @@
                         <p><strong>Knowledge:</strong> How confident are you in describing the safety of this area?</p>
                         <p>If you have lived or worked in this area answer 7 or higher. If you have visited the area on at least one occassion answer 3 or higher.</p>
                         <p><strong>Safety:</strong> Suppose you were an average <strong>person of the same gender</strong> around the <strong>age of 25</strong>. Based on your knowledge of the area, how comfortable would you feel walking around this neighbourhood/ward alone?</p>
-                        <p>Where 0 is you would feel very unsafe (even during the middle of the day you would never want to go to this place), 5 is the average across South Africa, and 10 is you would feel perfectly safe (walking around with jewlery visible and your headphones on).</p>
                     </div>
                     <div id="wardList">
                         <div class="loader"></div>
@@ -1857,6 +1854,17 @@
         document.getElementById("totalCount").textContent = totalCount;
     }
 
+    function collectSubmissionMetadata(submittedAt = new Date().toISOString()) {
+        return {
+            submission_timestamp: submittedAt,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+            language: navigator.language || "",
+            screen_size: `${window.screen?.width || 0}x${window.screen?.height || 0}`,
+            network_status: navigator.onLine ? "online" : "offline",
+            user_agent: navigator.userAgent || ""
+        };
+    }
+
     function surveyHeaders() {
         return [
             "response_id",
@@ -1864,6 +1872,12 @@
             "enumerator_name",
             "home_region",
             "survey_date",
+            "submission_timestamp",
+            "timezone",
+            "language",
+            "screen_size",
+            "network_status",
+            "user_agent",
             "type",
             "feature_id",
             "feature_name",
@@ -1879,6 +1893,7 @@
     function buildSurveyRows() {
         ensureResponseId();
         const submittedAt = new Date().toISOString();
+        const metadata = collectSubmissionMetadata(submittedAt);
         const rows = [];
 
         validRegionDataEntries().forEach(([name, data]) => {
@@ -1888,6 +1903,12 @@
                 state.enumeratorName,
                 state.region,
                 state.date,
+                metadata.submission_timestamp,
+                metadata.timezone,
+                metadata.language,
+                metadata.screen_size,
+                metadata.network_status,
+                metadata.user_agent,
                 "region",
                 name,
                 name,
@@ -1908,6 +1929,12 @@
                 state.enumeratorName,
                 state.region,
                 state.date,
+                metadata.submission_timestamp,
+                metadata.timezone,
+                metadata.language,
+                metadata.screen_size,
+                metadata.network_status,
+                metadata.user_agent,
                 "municipality",
                 id,
                 info.municipality_name || id,
@@ -1928,6 +1955,12 @@
                 state.enumeratorName,
                 state.region,
                 state.date,
+                metadata.submission_timestamp,
+                metadata.timezone,
+                metadata.language,
+                metadata.screen_size,
+                metadata.network_status,
+                metadata.user_agent,
                 "ward",
                 id,
                 wardInfo.ward_label || data.ward_label || id,
@@ -1940,11 +1973,11 @@
             ]);
         });
 
-        return { submittedAt, rows };
+        return { submittedAt, metadata, rows };
     }
 
     function buildSubmissionPayload() {
-        const { submittedAt, rows } = buildSurveyRows();
+        const { submittedAt, metadata, rows } = buildSurveyRows();
 
         return {
             response_id: state.responseId,
@@ -1952,6 +1985,12 @@
             enumerator_name: state.enumeratorName,
             home_region: state.region,
             survey_date: state.date,
+            submission_timestamp: metadata.submission_timestamp,
+            timezone: metadata.timezone,
+            language: metadata.language,
+            screen_size: metadata.screen_size,
+            network_status: metadata.network_status,
+            user_agent: metadata.user_agent,
             region_record_count: validRegionDataEntries().length,
             municipality_record_count: validMunicipalityDataEntries().length,
             ward_record_count: validWardDataEntries().length,
@@ -1962,7 +2001,13 @@
                     enumerator_name: state.enumeratorName,
                     region: state.region,
                     date: state.date,
-                    export_timestamp: submittedAt
+                    export_timestamp: submittedAt,
+                    submission_timestamp: metadata.submission_timestamp,
+                    timezone: metadata.timezone,
+                    language: metadata.language,
+                    screen_size: metadata.screen_size,
+                    network_status: metadata.network_status,
+                    user_agent: metadata.user_agent
                 },
                 region_data: Object.fromEntries(validRegionDataEntries()),
                 municipality_data: Object.fromEntries(validMunicipalityDataEntries()),
@@ -2024,19 +2069,31 @@
         updateStatus("Submitting survey...");
 
         try {
-            await fetch(appUrl, {
+            const response = await fetch(appUrl, {
                 method: "POST",
-                mode: "no-cors",
+                mode: "cors",
+                redirect: "follow",
                 headers: {
                     "Content-Type": "text/plain;charset=utf-8"
                 },
                 body: JSON.stringify(payload)
             });
 
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}`);
+            }
+
+            const result = await response.json();
+            if (!result || !["ok", "duplicate"].includes(result.status)) {
+                throw new Error("Submission was not confirmed by Google Sheets.");
+            }
+
             state.lastSubmissionSucceeded = true;
-            state.lastSubmissionMessage = "Submission sent. You can still download CSV or JSON below if you want a local copy.";
+            state.lastSubmissionMessage = result.status === "duplicate"
+                ? "This survey was already submitted earlier. No duplicate row was added."
+                : `Submission confirmed. ${result.row_count ?? payload.rows.length} rows were written to Google Sheets.`;
             saveToLocalStorage();
-            updateStatus("Submission sent");
+            updateStatus("Submission confirmed");
         } catch (error) {
             console.error(error);
             state.lastSubmissionSucceeded = false;
@@ -2069,13 +2126,20 @@
 
     function exportAsJSON() {
         ensureResponseId();
+        const metadata = collectSubmissionMetadata();
         const data = {
             metadata: {
                 response_id: state.responseId,
                 enumerator_name: state.enumeratorName,
                 region: state.region,
                 date: state.date,
-                export_timestamp: new Date().toISOString()
+                export_timestamp: new Date().toISOString(),
+                submission_timestamp: metadata.submission_timestamp,
+                timezone: metadata.timezone,
+                language: metadata.language,
+                screen_size: metadata.screen_size,
+                network_status: metadata.network_status,
+                user_agent: metadata.user_agent
             },
             region_data: Object.fromEntries(validRegionDataEntries()),
             municipality_data: Object.fromEntries(validMunicipalityDataEntries()),
