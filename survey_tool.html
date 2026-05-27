@@ -1430,6 +1430,17 @@
         });
     }
 
+    function focusStage2MapOnMunicipality(municipalityId) {
+        const features = municipalityFeaturesByIds([municipalityId]);
+        if (features.length === 0) return;
+
+        fitMapToFeatureSubset(state.municipalityMap, features, {
+            maxBoundsPad: 0.02,
+            padding: [12, 12],
+            maxZoom: 10
+        });
+    }
+
     function focusStage1MapOnRegion(regionName) {
         const features = regionFeaturesByName(regionName);
         if (features.length === 0) return;
@@ -1496,6 +1507,9 @@
         state.selectedMunicipalityId = municipalityId;
         syncMunicipalitySelectionState(Boolean(options.scrollIntoView));
         updateStage2MapView();
+        if (options.focusMap !== false) {
+            focusStage2MapOnMunicipality(municipalityId);
+        }
     }
 
     function selectWardById(wardId, options = {}) {
@@ -1739,7 +1753,7 @@
             state.municipalityData[municipalityId] = defaultRatings();
         }
 
-        selectMunicipality(municipalityId);
+        selectMunicipality(municipalityId, { focusMap: false });
         state.municipalityData[municipalityId][type] = parseInt(value, 10);
         document.getElementById(`${type}-value-${municipalityId}`).textContent = value;
         if (type === "knowledge") {
