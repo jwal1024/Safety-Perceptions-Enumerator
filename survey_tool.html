@@ -314,6 +314,37 @@
             opacity: 0.55;
         }
 
+        .familiarity-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .familiarity-button {
+            flex: 1;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            background: #fff;
+            color: #334155;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+        }
+
+        .familiarity-button.is-active.is-yes {
+            border-color: #2e7d32;
+            background: #e8f5e9;
+            color: #1b5e20;
+        }
+
+        .familiarity-button.is-active.is-no {
+            border-color: #c62828;
+            background: #ffebee;
+            color: #8b1e1e;
+        }
+
         .rating-value {
             font-size: 14px;
             font-weight: 600;
@@ -539,16 +570,15 @@
     <div class="survey-section" id="section-stage1">
         <div class="main-content">
             <div class="panel">
-                <div class="panel-header">Map View: Region Footprint</div>
+                <div class="panel-header">Map View: Province Footprint</div>
                 <div id="map-stage1"></div>
             </div>
             <div class="panel">
-                <div class="panel-header">Region Ratings</div>
+                <div class="panel-header">Province Familiarity</div>
                 <div class="panel-content">
                     <div class="rating-guidance">
-                        <p><strong>Knowledge:</strong> How confident are you in describing the safety of this area?</p>
-                        <p>If you have lived or worked in this area answer 7 or higher. If you have visited the area on at least one occassion answer 3 or higher.</p>
-                        <p><strong>Safety:</strong> Suppose you were an average <strong>person of the same gender</strong> around the <strong>age of 25</strong>. Based on your knowledge of the area, how comfortable would you feel walking around this neighbourhood/ward alone?</p>
+                        <p><strong>Familiarity:</strong> Are you familiar with some wards or neighbourhoods in this province?</p>
+                        <p>Answer <strong>Yes</strong> only if you know at least some parts of the province well enough to continue to municipality-level questions.</p>
                     </div>
                     <div id="regionList">
                         <div class="loader"></div>
@@ -566,7 +596,7 @@
     <div class="survey-section" id="section-stage2">
         <div class="main-content">
             <div class="panel">
-                <div class="panel-header">Map View: Selected Municipalities (Selected Regions Only)</div>
+                <div class="panel-header">Map View: Selected Municipalities (Familiar Provinces Only)</div>
                 <div id="map-stage2"></div>
             </div>
             <div class="panel">
@@ -575,7 +605,7 @@
                     <div class="rating-guidance">
                         <p><strong>Knowledge:</strong> How confident are you in describing the safety of this area?</p>
                         <p>If you have lived or worked in this area answer 7 or higher. If you have visited the area on at least one occassion answer 3 or higher.</p>
-                        <p><strong>Safety:</strong> Suppose you were an average <strong>person of the same gender</strong> around the <strong>age of 25</strong>. Based on your knowledge of the area, how comfortable would you feel walking around this neighbourhood/ward alone?</p>
+                        <p><strong>Safety:</strong> Think about the centre of the CBD in this municipality. Suppose you were an average <strong>person of the same gender</strong> around the <strong>age of 25</strong>. Based on your knowledge of the area, how comfortable would you feel walking around there alone?</p>
                     </div>
                     <div class="list-toolbar">
                         <input type="search" id="municipalitySearch" placeholder="Filter by municipality, region, or district" oninput="filterMunicipalityList()">
@@ -660,6 +690,7 @@
 
 <script src="survey_config.js"></script>
 <script src="survey_municipalities.js"></script>
+<script src="survey_wards.js"></script>
 <script>
     const DEFAULT_KNOWLEDGE_RATING = 0;
     const DEFAULT_SAFETY_RATING = 5;
@@ -919,6 +950,11 @@
         return state.municipalityGeoJSON.features.filter(feature => idSet.has(feature.properties.municipality_id));
     }
 
+    function regionFeaturesByName(regionName) {
+        if (!state.municipalityGeoJSON || !regionName) return [];
+        return state.municipalityGeoJSON.features.filter(feature => feature.properties.province_name === regionName);
+    }
+
     function selectedWardEntries() {
         if (!state.wardGeoJSON) return [];
 
@@ -1146,21 +1182,26 @@
 
         if (!state.wardsPromise) {
             state.wardsPromise = (async () => {
-                updateStatus("Loading ward boundaries for selected municipalities...");
-                if (!window.SURVEY_WARDS_DATA) {
-                    await loadLocalScript(WARDS_DATA_FILE);
-                }
+                try {
+                    updateStatus("Loading ward boundaries for selected municipalities...");
+                    if (!window.SURVEY_WARDS_DATA) {
+                        await loadLocalScript(WARDS_DATA_FILE);
+                    }
 
-                const payload = window.SURVEY_WARDS_DATA;
-                if (!payload || !payload.wards) {
-                    throw new Error("survey_wards.js is missing or invalid.");
-                }
+                    const payload = window.SURVEY_WARDS_DATA;
+                    if (!payload || !payload.wards) {
+                        throw new Error("survey_wards.js is missing or invalid.");
+                    }
 
-                state.wardGeoJSON = payload.wards;
-                state.wardIndex = buildWardIndex(payload.wards.features);
-                pruneStoredResponses();
-                saveToLocalStorage();
-                updateStatus(`Loaded ${payload.metadata.ward_count} wards`);
+                    state.wardGeoJSON = payload.wards;
+                    state.wardIndex = buildWardIndex(payload.wards.features);
+                    pruneStoredResponses();
+                    saveToLocalStorage();
+                    updateStatus(`Loaded ${payload.metadata.ward_count} wards`);
+                } catch (error) {
+                    state.wardsPromise = null;
+                    throw error;
+                }
             })();
         }
 
@@ -1198,7 +1239,8 @@
         populateRegionList();
         populateMunicipalityList();
         transitionToStage(1);
-        updateStatus("Ready for region ratings");
+        setTimeout(() => focusStage1MapOnRegion(state.selectedRegionName), 0);
+        updateStatus("Ready for province familiarity");
     }
 
     function transitionToStage(stage) {
@@ -1209,10 +1251,10 @@
             document.getElementById("stageIndicator").textContent = "Survey Setup";
         } else if (stage === 1) {
             document.getElementById("section-stage1").classList.add("active");
-            document.getElementById("stageIndicator").textContent = "Stage 1 of 4: Region Ratings (Knowledge & Safety)";
+            document.getElementById("stageIndicator").textContent = "Stage 1 of 4: Province Familiarity";
         } else if (stage === 2) {
             document.getElementById("section-stage2").classList.add("active");
-            document.getElementById("stageIndicator").textContent = "Stage 2 of 4: Municipality Ratings (Selected Regions)";
+            document.getElementById("stageIndicator").textContent = "Stage 2 of 4: Municipality Ratings (Familiar Provinces)";
         } else if (stage === 3) {
             document.getElementById("section-stage3").classList.add("active");
             document.getElementById("stageIndicator").textContent = "Stage 3 of 4: Ward-Level Ratings (Knowledge > 5 only)";
@@ -1250,7 +1292,8 @@
         }
 
         transitionToStage(1);
-        updateStatus("Back to region ratings");
+        setTimeout(() => focusStage1MapOnRegion(state.selectedRegionName), 0);
+        updateStatus("Back to province familiarity");
     }
 
     async function proceedToStage2() {
@@ -1259,7 +1302,7 @@
             .map(([name]) => name);
 
         if (state.filteredRegions.length === 0) {
-            alert("No regions with knowledge > 5. Please rate at least one region higher.");
+            alert("No familiar provinces selected yet. Please answer Yes for at least one province.");
             return;
         }
 
@@ -1267,7 +1310,7 @@
         updateStage2MapView();
         focusStage2MapOnVisibleMunicipalities();
         transitionToStage(2);
-        updateStatus(`Ready for municipality ratings in ${state.filteredRegions.length} selected regions`);
+        updateStatus(`Ready for municipality ratings in ${state.filteredRegions.length} familiar provinces`);
     }
 
     function backToStage2() {
@@ -1387,6 +1430,17 @@
         });
     }
 
+    function focusStage1MapOnRegion(regionName) {
+        const features = regionFeaturesByName(regionName);
+        if (features.length === 0) return;
+
+        fitMapToFeatureSubset(state.regionMap, features, {
+            maxBoundsPad: 0.02,
+            padding: [12, 12],
+            maxZoom: 8
+        });
+    }
+
     function setSelectedListItem(containerId, selectedElementId) {
         const container = document.getElementById(containerId);
         if (!container) return;
@@ -1432,6 +1486,9 @@
         state.selectedRegionName = regionName;
         syncRegionSelectionState(Boolean(options.scrollIntoView));
         updateStage1MapView();
+        if (options.focusMap !== false) {
+            focusStage1MapOnRegion(regionName);
+        }
     }
 
     function selectMunicipality(municipalityId, options = {}) {
@@ -1538,23 +1595,17 @@
             const homeTag = info.region_name === state.region
                 ? '<span style="display:inline-block; margin-left:8px; padding:2px 8px; border-radius:999px; background:#dff3e6; color:#1f6f43; font-size:11px; font-weight:600;">Home region</span>'
                 : "";
+            const isFamiliar = Number(ratings.knowledge) > 5;
 
             return `
                 <div class="municipality-item${info.region_name === state.selectedRegionName ? " is-selected" : ""}" id="region-row-${regionKey}" onclick="selectRegion('${info.region_name}')">
                     <div class="municipality-name">${info.region_name}${homeTag}</div>
                     <div class="municipality-meta">${info.municipality_count} municipalities | ${info.district_count} districts | ${info.ward_count} wards</div>
-                    <div class="rating-group">
-                        <div class="rating-input">
-                            <label for="region-knowledge-${regionKey}">Knowledge (0-10)</label>
-                            <input type="range" id="region-knowledge-${regionKey}" min="0" max="10" value="${ratings.knowledge}"
-                                   oninput="updateRegionRating('${info.region_name}', 'knowledge', this.value)">
-                            <span class="rating-value" id="region-knowledge-value-${regionKey}">${ratings.knowledge}</span>
-                        </div>
-                        <div class="rating-input">
-                            <label for="region-safety-${regionKey}">Safety (0-10)</label>
-                            <input type="range" id="region-safety-${regionKey}" min="0" max="10" value="${ratings.safety}" ${safetyInputState(ratings.knowledge)}
-                                   oninput="updateRegionRating('${info.region_name}', 'safety', this.value)">
-                            <span class="rating-value" id="region-safety-value-${regionKey}">${ratings.safety}</span>
+                    <div class="rating-input">
+                        <label>Are you familiar with some wards/neighbourhoods in this province?</label>
+                        <div class="familiarity-group">
+                            <button type="button" class="familiarity-button is-yes${isFamiliar ? " is-active" : ""}" onclick="event.stopPropagation(); setRegionFamiliarity('${info.region_name}', true)">Yes</button>
+                            <button type="button" class="familiarity-button is-no${!isFamiliar ? " is-active" : ""}" onclick="event.stopPropagation(); setRegionFamiliarity('${info.region_name}', false)">No</button>
                         </div>
                     </div>
                 </div>
@@ -1583,6 +1634,19 @@
         saveToLocalStorage();
         updateStage1MapView();
         updateStatus(`Updated ${regionName}: ${type}=${value}`);
+    }
+
+    function setRegionFamiliarity(regionName, isFamiliar) {
+        if (!state.regionData[regionName]) {
+            state.regionData[regionName] = defaultRatings();
+        }
+
+        selectRegion(regionName);
+        state.regionData[regionName].knowledge = isFamiliar ? 10 : 0;
+        state.regionData[regionName].safety = "";
+        saveToLocalStorage();
+        populateRegionList();
+        updateStatus(`${regionName}: familiarity set to ${isFamiliar ? "Yes" : "No"}`);
     }
 
     function initializeStage2Map() {
@@ -1636,7 +1700,7 @@
 
         if (municipalities.length === 0) {
             container.innerHTML = state.filteredRegions.length === 0
-                ? '<p style="color: #7f8c8d;">Select at least one region with knowledge above 5 to continue.</p>'
+                ? '<p style="color: #7f8c8d;">Select at least one familiar province to continue.</p>'
                 : '<p style="color: #7f8c8d;">No municipalities match this filter.</p>';
             return;
         }
@@ -1657,7 +1721,7 @@
                             <span class="rating-value" id="knowledge-value-${id}">${ratings.knowledge}</span>
                         </div>
                         <div class="rating-input">
-                            <label for="safety-${id}">Safety (0-10)</label>
+                            <label for="safety-${id}">CBD Safety (0-10)</label>
                             <input type="range" id="safety-${id}" min="0" max="10" value="${ratings.safety}" ${safetyInputState(ratings.knowledge)}
                                    oninput="updateMunicipalityRating('${id}', 'safety', this.value)">
                             <span class="rating-value" id="safety-value-${id}">${ratings.safety}</span>
@@ -1922,7 +1986,7 @@
                 "",
                 name,
                 data.knowledge,
-                data.safety
+                ""
             ]);
         });
 
