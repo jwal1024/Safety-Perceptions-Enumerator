@@ -654,13 +654,7 @@
         <div class="panel">
             <div class="panel-header">Survey Complete - Send or Export Data</div>
             <div class="panel-content">
-                <div class="success">Survey data collected successfully.</div>
-                <div class="data-summary" style="font-size: 14px; margin-bottom: 20px;">
-                    <p><strong>Region Records:</strong> <span id="regionCount">0</span></p>
-                    <p><strong>Municipality Records:</strong> <span id="municCount">0</span></p>
-                    <p><strong>Ward Records:</strong> <span id="wardCount">0</span></p>
-                    <p><strong>Total Records:</strong> <span id="totalCount">0</span></p>
-                </div>
+                <p style="color: #555; margin-bottom: 20px;">Please press submit and wait until your submission is confirmed. If you can, please also save the data locally as a CSV or JSON and on-send to Alice.</p>
                 <div class="submission-status" id="submissionStatusBox"></div>
                 <div class="button-group">
                     <button class="btn-success" id="submitSurveyButton" onclick="submitSurveyToGoogleSheets()">Submit</button>
@@ -1441,6 +1435,18 @@
         });
     }
 
+    function focusStage3MapOnWard(wardId) {
+        if (!state.wardGeoJSON || !wardId) return;
+        const features = state.wardGeoJSON.features.filter(feature => feature.properties.ward_id === wardId);
+        if (features.length === 0) return;
+
+        fitMapToFeatureSubset(state.wardMap, features, {
+            maxBoundsPad: 0.02,
+            padding: [12, 12],
+            maxZoom: 11
+        });
+    }
+
     function focusStage1MapOnRegion(regionName) {
         const features = regionFeaturesByName(regionName);
         if (features.length === 0) return;
@@ -1520,6 +1526,9 @@
         state.selectedWardLayer = state.wardLayerById[wardId] || null;
         syncWardSelectionState(Boolean(options.scrollIntoView));
         refreshWardLayerStyles();
+        if (options.focusMap !== false) {
+            focusStage3MapOnWard(wardId);
+        }
     }
 
     function coverageRings(geometry) {
@@ -1890,7 +1899,7 @@
     function updateWardRating(wardId, type, value) {
         ensureWardDefaults(wardId);
 
-        selectWardById(wardId);
+        selectWardById(wardId, { focusMap: false });
         state.wardData[wardId][type] = parseInt(value, 10);
 
         const valueEl = document.getElementById(`ward-${type}-value-${wardId}`);
@@ -1926,10 +1935,15 @@
         const wardCount = validWardDataEntries().length;
         const totalCount = regionCount + municCount + wardCount;
 
-        document.getElementById("regionCount").textContent = regionCount;
-        document.getElementById("municCount").textContent = municCount;
-        document.getElementById("wardCount").textContent = wardCount;
-        document.getElementById("totalCount").textContent = totalCount;
+        const regionCountEl = document.getElementById("regionCount");
+        const municCountEl = document.getElementById("municCount");
+        const wardCountEl = document.getElementById("wardCount");
+        const totalCountEl = document.getElementById("totalCount");
+
+        if (regionCountEl) regionCountEl.textContent = regionCount;
+        if (municCountEl) municCountEl.textContent = municCount;
+        if (wardCountEl) wardCountEl.textContent = wardCount;
+        if (totalCountEl) totalCountEl.textContent = totalCount;
     }
 
     function collectSubmissionMetadata(submittedAt = new Date().toISOString()) {
