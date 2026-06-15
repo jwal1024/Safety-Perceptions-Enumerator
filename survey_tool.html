@@ -217,6 +217,26 @@
             gap: 12px;
         }
 
+        .ward-page-summary {
+            padding: 12px 14px;
+            border: 1px solid #d8e3ec;
+            border-radius: 6px;
+            background: #f8fbfd;
+        }
+
+        .ward-page-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #243447;
+        }
+
+        .ward-page-status {
+            margin-top: 4px;
+            font-size: 13px;
+            color: #5b6b79;
+            line-height: 1.4;
+        }
+
         #municipalityList {
             flex: 1;
             min-height: 0;
@@ -626,7 +646,7 @@
     <div class="survey-section" id="section-stage3">
         <div class="main-content">
             <div class="panel">
-                <div class="panel-header">Map View: Selected Municipalities (Knowledge &gt; 5)</div>
+                <div class="panel-header">Map View: Current Municipality (Knowledge &gt; 5)</div>
                 <div id="map-stage3"></div>
             </div>
             <div class="panel">
@@ -637,6 +657,10 @@
                         <p>If you have lived or worked in this area answer 7 or higher. If you have visited the area on at least one occassion answer 3 or higher.</p>
                         <p><strong>Safety:</strong> Suppose you were an average <strong>person of the same gender</strong> around the <strong>age of 25</strong>. Based on your knowledge of the area, how comfortable would you feel walking around this neighbourhood/ward alone?</p>
                     </div>
+                    <div class="ward-page-summary" id="wardPageSummary">
+                        <div class="ward-page-title" id="wardPageTitle">Loading municipality...</div>
+                        <div class="ward-page-status" id="wardPageStatus"></div>
+                    </div>
                     <div id="wardList">
                         <div class="loader"></div>
                         Loading ward data...
@@ -645,8 +669,10 @@
             </div>
         </div>
         <div class="button-group">
-            <div class="lock-warning">Please carefully check your answers, you won't be able to go back once you proceed to the next section.</div>
-            <button class="btn-success" onclick="proceedToExport()">Complete, Send, or Export Data</button>
+            <div class="lock-warning">You can move between municipality pages while rating wards, but you cannot go back to municipality ratings after you proceed here.</div>
+            <button class="btn-secondary" id="wardPrevButton" onclick="goToWardMunicipalityPage(-1)">Previous Municipality</button>
+            <button class="btn-primary" id="wardNextButton" onclick="goToWardMunicipalityPage(1)">Next Municipality</button>
+            <button class="btn-success" id="wardCompleteButton" onclick="proceedToExport()">Complete, Send, or Export Data</button>
         </div>
     </div>
 
@@ -683,12 +709,22 @@
 </div>
 
 <script src="survey_config.js"></script>
-<script src="survey_municipalities.js"></script>
-<script src="survey_wards.js"></script>
 <script>
     const DEFAULT_KNOWLEDGE_RATING = 0;
     const DEFAULT_SAFETY_RATING = 5;
+    const PROVINCE_DATA_FILE = "survey_provinces.js";
     const WARDS_DATA_FILE = "survey_wards.js";
+    const PROVINCE_NAMES = [
+        "Eastern Cape",
+        "Free State",
+        "Gauteng",
+        "KwaZulu-Natal",
+        "Limpopo",
+        "Mpumalanga",
+        "North West",
+        "Northern Cape",
+        "Western Cape"
+    ];
     const DEFAULT_SURVEY_CONFIG = {
         googleSheets: {
             enabled: false,
@@ -714,6 +750,8 @@
         regionMap: null,
         municipalityMap: null,
         wardMap: null,
+        provinceGeoJSON: null,
+        provinceSummaries: [],
         municipalityGeoJSON: null,
         municipalityIndex: {},
         coverageFeature: null,
@@ -724,8 +762,10 @@
         municipalityLayer: null,
         wardLayer: null,
         wardLayerById: {},
+        municipalityLoadPromises: {},
         selectedRegionName: "",
         selectedMunicipalityId: "",
+        currentWardMunicipalityIndex: 0,
         selectedWardLayer: null,
         selectedWardId: null,
         wardsPromise: null
@@ -744,6 +784,14 @@
 
     function makeDomSafeKey(value) {
         return String(value).replace(/[^a-zA-Z0-9_-]+/g, "-");
+    }
+
+    function provinceSlug(value) {
+        return String(value)
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "");
     }
 
     function createResponseId() {
@@ -784,12 +832,7 @@
     }
 
     function availableProvinces() {
-        const payload = window.SURVEY_MUNICIPALITIES_DATA;
-        if (!payload?.municipalities?.features) return [];
-
-        return [...new Set(
-            payload.municipalities.features.map(feature => feature.properties.province_name).filter(Boolean)
-        )].sort((a, b) => a.localeCompare(b));
+        return [...PROVINCE_NAMES].sort((a, b) => a.localeCompare(b));
     }
 
     function populateProvinceOptions() {
@@ -846,23 +889,14 @@
     }
 
     function regionEntries() {
-        if (!state.municipalityGeoJSON) return [];
-
-        return availableProvinces().map(regionName => {
-            const municipalities = state.municipalityGeoJSON.features
-                .map(feature => feature.properties)
-                .filter(info => info.province_name === regionName);
-
-            const districtCount = new Set(municipalities.map(info => info.district_name).filter(Boolean)).size;
-            const wardCount = municipalities.reduce((sum, info) => sum + (Number(info.ward_count) || 0), 0);
-
-            return {
-                region_name: regionName,
-                municipality_count: municipalities.length,
-                district_count: districtCount,
-                ward_count: wardCount
-            };
-        });
+        return state.provinceSummaries
+            .map(summary => ({
+                region_name: summary.region_name || summary.province_name,
+                municipality_count: Number(summary.municipality_count) || 0,
+                district_count: Number(summary.district_count) || 0,
+                ward_count: Number(summary.ward_count) || 0
+            }))
+            .sort((a, b) => a.region_name.localeCompare(b.region_name));
     }
 
     function validRegionDataEntries() {
@@ -891,6 +925,7 @@
             enumeratorName: state.enumeratorName,
             region: state.region,
             date: state.date,
+            currentWardMunicipalityIndex: state.currentWardMunicipalityIndex,
             highestStageReached: state.highestStageReached,
             lastSubmissionMessage: state.lastSubmissionMessage,
             lastSubmissionSucceeded: state.lastSubmissionSucceeded
@@ -945,22 +980,47 @@
     }
 
     function regionFeaturesByName(regionName) {
-        if (!state.municipalityGeoJSON || !regionName) return [];
-        return state.municipalityGeoJSON.features.filter(feature => feature.properties.province_name === regionName);
+        if (!state.provinceGeoJSON || !regionName) return [];
+        return state.provinceGeoJSON.features.filter(feature => feature.properties.province_name === regionName);
     }
 
-    function selectedWardEntries() {
-        if (!state.wardGeoJSON) return [];
-
+    function selectedMunicipalityEntries() {
         const municipalitySet = new Set(state.filteredMunicipalities);
+        return municipalityEntries()
+            .filter(info => municipalitySet.has(info.municipality_id))
+            .sort((a, b) => {
+                const provinceCompare = a.province_name.localeCompare(b.province_name);
+                if (provinceCompare !== 0) return provinceCompare;
+                const districtCompare = a.district_name.localeCompare(b.district_name);
+                if (districtCompare !== 0) return districtCompare;
+                return a.municipality_name.localeCompare(b.municipality_name);
+            });
+    }
+
+    function wardEntriesForMunicipality(municipalityId) {
+        if (!state.wardGeoJSON || !municipalityId) return [];
+
         return state.wardGeoJSON.features
             .map(feature => feature.properties)
-            .filter(info => municipalitySet.has(info.municipality_id))
+            .filter(info => info.municipality_id === municipalityId)
             .sort((a, b) => {
                 const municipalityCompare = a.municipality_name.localeCompare(b.municipality_name);
                 if (municipalityCompare !== 0) return municipalityCompare;
                 return (Number(a.ward_no) || 0) - (Number(b.ward_no) || 0);
             });
+    }
+
+    function currentWardMunicipalityInfo() {
+        const municipalities = selectedMunicipalityEntries();
+        if (municipalities.length === 0) return null;
+
+        state.currentWardMunicipalityIndex = clamp(
+            state.currentWardMunicipalityIndex,
+            0,
+            municipalities.length - 1
+        );
+
+        return municipalities[state.currentWardMunicipalityIndex];
     }
 
     function clamp(value, min, max) {
@@ -1151,24 +1211,92 @@
         return index;
     }
 
-    async function loadMunicipalityData() {
-        updateStatus("Loading municipality boundaries...");
+    function resetLoadedMunicipalityData() {
+        state.municipalityGeoJSON = null;
+        state.municipalityIndex = {};
+        state.selectedMunicipalityId = "";
+    }
 
-        const payload = window.SURVEY_MUNICIPALITIES_DATA;
-        if (!payload || !payload.municipalities || !payload.coverage) {
-            throw new Error("survey_municipalities.js is missing or invalid.");
+    async function ensureProvinceDataLoaded() {
+        if (state.provinceGeoJSON) return true;
+
+        updateStatus("Loading province boundaries...");
+
+        if (!window.SURVEY_PROVINCES_DATA) {
+            await loadLocalScript(PROVINCE_DATA_FILE);
         }
 
-        state.municipalityGeoJSON = payload.municipalities;
+        const payload = window.SURVEY_PROVINCES_DATA;
+        if (!payload || !payload.provinces || !payload.coverage) {
+            throw new Error("survey_provinces.js is missing or invalid.");
+        }
+
+        state.provinceGeoJSON = payload.provinces;
+        state.provinceSummaries = Array.isArray(payload.province_summaries) ? payload.province_summaries : [];
         state.coverageFeature = payload.coverage;
         state.datasetBounds = buildBounds(payload.metadata.bounds);
-        state.municipalityIndex = buildMunicipalityIndex(payload.municipalities.features);
         pruneStoredResponses();
         ensureRegionDefaults();
+        saveToLocalStorage();
+
+        updateStatus(`Loaded ${payload.metadata.province_count} provinces`);
+        return true;
+    }
+
+    function municipalityDataFilename(provinceName) {
+        return `survey_municipalities_${provinceSlug(provinceName)}.js`;
+    }
+
+    function municipalityPayloadForProvince(provinceName) {
+        return window.SURVEY_MUNICIPALITIES_BY_PROVINCE?.[provinceName] || null;
+    }
+
+    async function ensureMunicipalityDataLoaded(provinceNames) {
+        if (!provinceNames || provinceNames.length === 0) {
+            resetLoadedMunicipalityData();
+            return true;
+        }
+
+        updateStatus("Loading municipality boundaries...");
+
+        const uniqueProvinceNames = [...new Set(provinceNames)].sort((a, b) => a.localeCompare(b));
+        const loadTasks = uniqueProvinceNames.map(async provinceName => {
+            if (municipalityPayloadForProvince(provinceName)) {
+                return;
+            }
+
+            if (!state.municipalityLoadPromises[provinceName]) {
+                state.municipalityLoadPromises[provinceName] = loadLocalScript(municipalityDataFilename(provinceName))
+                    .catch(error => {
+                        delete state.municipalityLoadPromises[provinceName];
+                        throw error;
+                    });
+            }
+
+            await state.municipalityLoadPromises[provinceName];
+        });
+
+        await Promise.all(loadTasks);
+
+        const features = uniqueProvinceNames.flatMap(provinceName => {
+            const payload = municipalityPayloadForProvince(provinceName);
+            if (!payload?.municipalities?.features) {
+                throw new Error(`Municipality data for ${provinceName} is missing or invalid.`);
+            }
+            return payload.municipalities.features;
+        });
+
+        state.municipalityGeoJSON = {
+            type: "FeatureCollection",
+            features
+        };
+        state.municipalityIndex = buildMunicipalityIndex(features);
+        pruneStoredResponses();
         ensureMunicipalityDefaults();
         saveToLocalStorage();
 
-        updateStatus(`Loaded ${payload.metadata.municipality_count} municipalities`);
+        updateStatus(`Loaded ${features.length} municipalities across ${uniqueProvinceNames.length} provinces`);
+        return true;
     }
 
     async function ensureWardDataLoaded() {
@@ -1209,6 +1337,8 @@
         state.date = document.getElementById("date").value;
         state.selectedRegionName = state.region;
         state.selectedMunicipalityId = "";
+        state.currentWardMunicipalityIndex = 0;
+        resetLoadedMunicipalityData();
         ensureResponseId();
 
         if (!state.enumeratorName || !state.region) {
@@ -1219,11 +1349,11 @@
         updateStatus("Loading survey...");
 
         try {
-            await loadMunicipalityData();
+            await ensureProvinceDataLoaded();
         } catch (error) {
             console.error(error);
             updateStatus(`Error: ${error.message}`);
-            alert("Could not load municipality data. Make sure survey_municipalities.js is in the same folder as survey_tool.html.");
+            alert("Could not load province data. Make sure survey_provinces.js is in the same folder as this page.");
             return;
         }
 
@@ -1231,7 +1361,6 @@
         initializeStage2Map();
         initializeStage3Map();
         populateRegionList();
-        populateMunicipalityList();
         transitionToStage(1);
         setTimeout(() => focusStage1MapOnRegion(state.selectedRegionName), 0);
         updateStatus("Ready for province familiarity");
@@ -1300,6 +1429,16 @@
             return;
         }
 
+        try {
+            await ensureMunicipalityDataLoaded(state.filteredRegions);
+        } catch (error) {
+            console.error(error);
+            updateStatus(`Error: ${error.message}`);
+            alert("Could not load municipality data for the selected provinces. Make sure the split municipality files are in the same folder as this page.");
+            return;
+        }
+
+        initializeStage2Map();
         populateMunicipalityList();
         updateStage2MapView();
         focusStage2MapOnVisibleMunicipalities();
@@ -1332,10 +1471,17 @@
         } catch (error) {
             console.error(error);
             updateStatus(`Error: ${error.message}`);
-            alert("Could not load ward data. Make sure survey_wards.js is in the same folder as survey_tool.html.");
+            alert("Could not load ward data. Make sure survey_wards.js is in the same folder as this page.");
             return;
         }
 
+        const wardMunicipalities = selectedMunicipalityEntries();
+        const selectedIndex = wardMunicipalities.findIndex(
+            info => info.municipality_id === state.selectedMunicipalityId
+        );
+        state.currentWardMunicipalityIndex = selectedIndex >= 0 ? selectedIndex : 0;
+        state.selectedWardLayer = null;
+        state.selectedWardId = null;
         transitionToStage(3);
         updateStage3Map();
         updateStatus(`Ready for ward ratings in ${state.filteredMunicipalities.length} selected municipalities`);
@@ -1359,15 +1505,17 @@
             state.filteredMunicipalities = [];
             state.selectedRegionName = state.region;
             state.selectedMunicipalityId = "";
+            state.currentWardMunicipalityIndex = 0;
             state.selectedWardLayer = null;
             state.selectedWardId = null;
             state.highestStageReached = 0;
+            resetLoadedMunicipalityData();
             ensureRegionDefaults();
             ensureMunicipalityDefaults();
             populateRegionList();
             populateMunicipalityList();
             updateStage1MapView();
-            updateStage2MapView();
+            initializeStage2Map();
             resetWardPanel();
             refreshWardLayerStyles();
             saveToLocalStorage();
@@ -1436,15 +1584,25 @@
     }
 
     function focusStage3MapOnWard(wardId) {
-        if (!state.wardGeoJSON || !wardId) return;
+        if (!state.wardMap || !wardId) return;
+
+        const layer = state.wardLayerById[wardId];
+        if (layer && typeof layer.getBounds === "function") {
+            const bounds = layer.getBounds();
+            if (bounds.isValid()) {
+                state.wardMap.panTo(bounds.getCenter(), { animate: true });
+                return;
+            }
+        }
+
+        if (!state.wardGeoJSON) return;
         const features = state.wardGeoJSON.features.filter(feature => feature.properties.ward_id === wardId);
         if (features.length === 0) return;
 
-        fitMapToFeatureSubset(state.wardMap, features, {
-            maxBoundsPad: 0.02,
-            padding: [12, 12],
-            maxZoom: 11
-        });
+        const bounds = L.geoJSON(features).getBounds();
+        if (bounds.isValid()) {
+            state.wardMap.panTo(bounds.getCenter(), { animate: true });
+        }
     }
 
     function focusStage1MapOnRegion(regionName) {
@@ -1531,6 +1689,64 @@
         }
     }
 
+    function updateWardPageControls() {
+        const titleEl = document.getElementById("wardPageTitle");
+        const statusEl = document.getElementById("wardPageStatus");
+        const prevButton = document.getElementById("wardPrevButton");
+        const nextButton = document.getElementById("wardNextButton");
+        const completeButton = document.getElementById("wardCompleteButton");
+        const municipalities = selectedMunicipalityEntries();
+
+        if (!titleEl || !statusEl || !prevButton || !nextButton || !completeButton) return;
+
+        if (municipalities.length === 0) {
+            titleEl.textContent = "No municipalities selected";
+            statusEl.textContent = "No ward pages are available yet.";
+            prevButton.disabled = true;
+            nextButton.style.display = "none";
+            completeButton.style.display = "";
+            return;
+        }
+
+        const municipality = currentWardMunicipalityInfo();
+        const wards = wardEntriesForMunicipality(municipality?.municipality_id);
+        const pageNumber = state.currentWardMunicipalityIndex + 1;
+        const isFirstPage = state.currentWardMunicipalityIndex === 0;
+        const isLastPage = state.currentWardMunicipalityIndex === municipalities.length - 1;
+
+        titleEl.textContent = municipality.municipality_name;
+        statusEl.textContent = `Municipality ${pageNumber} of ${municipalities.length} | ${municipality.province_name} | ${municipality.district_name} | ${wards.length} wards`;
+        prevButton.disabled = isFirstPage;
+        nextButton.style.display = isLastPage ? "none" : "";
+        completeButton.style.display = isLastPage ? "" : "none";
+    }
+
+    function goToWardMunicipalityPage(direction) {
+        const municipalities = selectedMunicipalityEntries();
+        if (municipalities.length === 0) return;
+
+        const nextIndex = clamp(
+            state.currentWardMunicipalityIndex + direction,
+            0,
+            municipalities.length - 1
+        );
+
+        if (nextIndex === state.currentWardMunicipalityIndex) return;
+
+        state.currentWardMunicipalityIndex = nextIndex;
+        state.selectedWardLayer = null;
+        state.selectedWardId = null;
+        updateStage3Map();
+
+        const wardPanel = document.getElementById("wardPanelContent");
+        if (wardPanel) {
+            wardPanel.scrollTo({ top: 0, behavior: "smooth" });
+        }
+
+        const municipality = municipalities[nextIndex];
+        updateStatus(`Ward page ${nextIndex + 1} of ${municipalities.length}: ${municipality.municipality_name}`);
+    }
+
     function coverageRings(geometry) {
         if (!geometry) return [];
         if (geometry.type === "Polygon") return geometry.coordinates;
@@ -1572,16 +1788,25 @@
         `;
     }
 
+    function provincePopup(info) {
+        return `
+            <strong>${info.province_name}</strong><br>
+            ${info.municipality_count} municipalities<br>
+            ${info.district_count} districts<br>
+            ${info.ward_count} wards
+        `;
+    }
+
     function initializeStage1Map() {
         if (state.regionMap) state.regionMap.remove();
 
         state.regionMap = createBaseMap("map-stage1");
 
-        if (state.municipalityGeoJSON) {
-            state.regionLayer = L.geoJSON(state.municipalityGeoJSON, {
+        if (state.provinceGeoJSON) {
+            state.regionLayer = L.geoJSON(state.provinceGeoJSON, {
                 style: feature => getRegionMapStyle(feature.properties.province_name),
                 onEachFeature: (feature, layer) => {
-                    layer.bindPopup(municipalityPopup(feature.properties));
+                    layer.bindPopup(provincePopup(feature.properties));
                     layer.on("click", () => selectRegion(feature.properties.province_name, { scrollIntoView: true }));
                 }
             }).addTo(state.regionMap);
@@ -1601,7 +1826,7 @@
     function populateRegionList() {
         const container = document.getElementById("regionList");
 
-        if (!state.municipalityGeoJSON) {
+        if (!state.provinceGeoJSON) {
             container.innerHTML = '<p style="color: #7f8c8d;">Region data is not available.</p>';
             return;
         }
@@ -1710,7 +1935,9 @@
         const container = document.getElementById("municipalityList");
 
         if (!state.municipalityGeoJSON) {
-            container.innerHTML = '<p style="color: #7f8c8d;">Municipality data is not available.</p>';
+            container.innerHTML = state.filteredRegions.length === 0
+                ? '<p style="color: #7f8c8d;">Municipality data will load after you choose familiar provinces.</p>'
+                : '<p style="color: #7f8c8d;">Loading municipality data...</p>';
             return;
         }
 
@@ -1780,7 +2007,8 @@
     }
 
     function resetWardPanel() {
-        document.getElementById("wardList").innerHTML = '<p style="color: #7f8c8d;">Select a municipality in Stage 2, then rate its wards here.</p>';
+        document.getElementById("wardList").innerHTML = '<p style="color: #7f8c8d;">Choose municipalities in Stage 2, then rate their wards one municipality at a time here.</p>';
+        updateWardPageControls();
     }
 
     function initializeStage3Map() {
@@ -1795,65 +2023,55 @@
 
         if (!state.wardGeoJSON) {
             container.innerHTML = '<p style="color: #7f8c8d;">Ward data is not available.</p>';
+            updateWardPageControls();
             return;
         }
 
-        const wards = selectedWardEntries();
+        const municipality = currentWardMunicipalityInfo();
+        if (!municipality) {
+            container.innerHTML = '<p style="color: #7f8c8d;">No municipalities are available for ward ratings yet.</p>';
+            updateWardPageControls();
+            return;
+        }
+
+        const wards = wardEntriesForMunicipality(municipality.municipality_id);
         if (state.selectedWardId && !wards.some(info => info.ward_id === state.selectedWardId)) {
             state.selectedWardId = null;
             state.selectedWardLayer = null;
         }
 
         if (wards.length === 0) {
-            container.innerHTML = '<p style="color: #7f8c8d;">No wards are available for the selected municipalities yet.</p>';
+            container.innerHTML = '<p style="color: #7f8c8d;">No wards are available for this municipality.</p>';
+            updateWardPageControls();
             return;
         }
 
-        const groupedWards = wards.reduce((groups, info) => {
-            const key = info.municipality_id;
-            if (!groups[key]) {
-                groups[key] = {
-                    municipality_id: info.municipality_id,
-                    municipality_name: info.municipality_name,
-                    province_name: info.province_name,
-                    district_name: info.district_name,
-                    wards: []
-                };
-            }
-            groups[key].wards.push(info);
-            return groups;
-        }, {});
-
-        container.innerHTML = Object.values(groupedWards).map(group => `
-            <div class="ward-group">
-                <div class="ward-group-title">${group.municipality_name} | ${group.province_name} | ${group.district_name}</div>
-                ${group.wards.map(info => {
-                    ensureWardDefaults(info.ward_id);
-                    const wardInfo = state.wardData[info.ward_id] || defaultRatings();
-                    return `
-                        <div class="municipality-item${info.ward_id === state.selectedWardId ? " is-selected" : ""}" id="ward-row-${info.ward_id}" onclick="selectWardById('${info.ward_id}')">
-                            <div class="municipality-name">Ward ${info.ward_no} (${info.ward_label})</div>
-                            <div class="municipality-meta">${info.municipality_name}</div>
-                            <div class="rating-group">
-                                <div class="rating-input">
-                                    <label for="ward-knowledge-${info.ward_id}">Knowledge (0-10)</label>
-                                    <input type="range" id="ward-knowledge-${info.ward_id}" min="0" max="10" value="${wardInfo.knowledge}"
-                                           oninput="updateWardRating('${info.ward_id}', 'knowledge', this.value)">
-                                    <span class="rating-value" id="ward-knowledge-value-${info.ward_id}">${wardInfo.knowledge}</span>
-                                </div>
-                                <div class="rating-input">
-                                    <label for="ward-safety-${info.ward_id}">Safety (0-10)</label>
-                                    <input type="range" id="ward-safety-${info.ward_id}" min="0" max="10" value="${wardInfo.safety}" ${safetyInputState(wardInfo.knowledge)}
-                                           oninput="updateWardRating('${info.ward_id}', 'safety', this.value)">
-                                    <span class="rating-value" id="ward-safety-value-${info.ward_id}">${wardInfo.safety}</span>
-                                </div>
-                            </div>
+        container.innerHTML = wards.map(info => {
+            ensureWardDefaults(info.ward_id);
+            const wardInfo = state.wardData[info.ward_id] || defaultRatings();
+            return `
+                <div class="municipality-item${info.ward_id === state.selectedWardId ? " is-selected" : ""}" id="ward-row-${info.ward_id}" onclick="selectWardById('${info.ward_id}')">
+                    <div class="municipality-name">Ward ${info.ward_no} (${info.ward_label})</div>
+                    <div class="municipality-meta">${info.municipality_name} | ${info.province_name} | ${info.district_name}</div>
+                    <div class="rating-group">
+                        <div class="rating-input">
+                            <label for="ward-knowledge-${info.ward_id}">Knowledge (0-10)</label>
+                            <input type="range" id="ward-knowledge-${info.ward_id}" min="0" max="10" value="${wardInfo.knowledge}"
+                                   oninput="updateWardRating('${info.ward_id}', 'knowledge', this.value)">
+                            <span class="rating-value" id="ward-knowledge-value-${info.ward_id}">${wardInfo.knowledge}</span>
                         </div>
-                    `;
-                }).join("")}
-            </div>
-        `).join("");
+                        <div class="rating-input">
+                            <label for="ward-safety-${info.ward_id}">Safety (0-10)</label>
+                            <input type="range" id="ward-safety-${info.ward_id}" min="0" max="10" value="${wardInfo.safety}" ${safetyInputState(wardInfo.knowledge)}
+                                   oninput="updateWardRating('${info.ward_id}', 'safety', this.value)">
+                            <span class="rating-value" id="ward-safety-value-${info.ward_id}">${wardInfo.safety}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join("");
 
+        updateWardPageControls();
         syncWardSelectionState();
     }
 
@@ -1866,14 +2084,22 @@
         }
 
         state.wardLayerById = {};
-        state.selectedWardLayer = null;
-        state.selectedWardId = null;
         populateWardList();
 
-        const municipalitySet = new Set(state.filteredMunicipalities);
-        const selectedMunicipalityFeatures = municipalityFeaturesByIds(state.filteredMunicipalities);
+        const municipality = currentWardMunicipalityInfo();
+        if (!municipality) {
+            updateWardPageControls();
+            return;
+        }
+
+        if (state.selectedWardId && state.wardIndex[state.selectedWardId]?.municipality_id !== municipality.municipality_id) {
+            state.selectedWardLayer = null;
+            state.selectedWardId = null;
+        }
+
+        const selectedMunicipalityFeatures = municipalityFeaturesByIds([municipality.municipality_id]);
         const filteredFeatures = state.wardGeoJSON.features.filter(
-            feature => municipalitySet.has(feature.properties.municipality_id)
+            feature => feature.properties.municipality_id === municipality.municipality_id
         );
 
         state.wardLayer = L.geoJSON(filteredFeatures, {
@@ -1894,6 +2120,7 @@
             padding: [6, 6],
             maxZoom: 11
         });
+        refreshWardLayerStyles();
     }
 
     function updateWardRating(wardId, type, value) {
@@ -2281,15 +2508,17 @@
                 state.filteredMunicipalities = [];
                 state.selectedRegionName = state.region;
                 state.selectedMunicipalityId = "";
+                state.currentWardMunicipalityIndex = 0;
                 state.selectedWardLayer = null;
                 state.selectedWardId = null;
+                resetLoadedMunicipalityData();
                 ensureRegionDefaults();
                 ensureMunicipalityDefaults();
                 populateRegionList();
                 populateMunicipalityList();
                 populateWardList();
                 updateStage1MapView();
-                updateStage2MapView();
+                initializeStage2Map();
                 resetWardPanel();
                 refreshWardLayerStyles();
                 saveToLocalStorage();
@@ -2319,6 +2548,9 @@
                 state.region = data.region || "";
                 state.selectedRegionName = data.region || "";
                 state.date = data.date || state.date;
+                state.currentWardMunicipalityIndex = Number.isFinite(data.currentWardMunicipalityIndex)
+                    ? data.currentWardMunicipalityIndex
+                    : 0;
                 state.highestStageReached = Number.isFinite(data.highestStageReached) ? data.highestStageReached : 0;
                 state.lastSubmissionMessage = data.lastSubmissionMessage || "";
                 state.lastSubmissionSucceeded = Boolean(data.lastSubmissionSucceeded);
