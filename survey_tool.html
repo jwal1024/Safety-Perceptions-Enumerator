@@ -289,6 +289,24 @@
             font-size: 13px;
         }
 
+        #stage2MapContext {
+            border-bottom: none;
+            background: #2f6fb2;
+        }
+
+        #stage2MapContext strong {
+            color: #ffffff;
+        }
+
+        #stage3MapContext {
+            border-bottom: none;
+            background: #2f6fb2;
+        }
+
+        #stage3MapContext strong {
+            color: #ffffff;
+        }
+
         .panel-content.stage-list-content {
             height: auto;
             min-height: 0;
@@ -751,7 +769,6 @@
         </div>
         <div class="main-content">
             <div class="panel map-panel">
-                <div class="panel-header">Map View: Selected Municipalities (Familiar Provinces Only)</div>
                 <div class="map-context-banner" id="stage2MapContext"></div>
                 <div id="map-stage2"></div>
             </div>
@@ -778,17 +795,12 @@
     </div>
 
     <div class="survey-section" id="section-stage3">
-        <div class="stage-reminder">
-            <p><strong>Ward ratings:</strong> tap a ward name to locate it on the map. Knowledge measures how confident you are; if knowledge is 0, safety stays disabled.</p>
-        </div>
         <div class="main-content">
             <div class="panel map-panel">
-                <div class="panel-header">Map View: Current Municipality (Knowledge &gt; 5)</div>
                 <div class="map-context-banner" id="stage3MapContext"></div>
                 <div id="map-stage3"></div>
             </div>
             <div class="panel">
-                <div class="panel-header">Ward-Level Details</div>
                 <div class="panel-content stage-list-content" id="wardPanelContent">
                     <div class="page-summary" id="wardPageSummary">
                         <div class="page-title" id="wardPageTitle">Loading municipality...</div>
@@ -1925,7 +1937,7 @@
 
         titleEl.textContent = current.municipality_name;
         statusEl.textContent = `Municipality ${state.currentMunicipalityPageIndex + 1} of ${municipalities.length} | ${current.province_name} | ${current.district_name} | ${current.ward_count} wards`;
-        mapContext.innerHTML = `<strong>${current.province_name}</strong><span>${provincePageIndex} of ${currentProvinceEntries.length} municipalities in this province. Tap the municipality name below to refocus the map.</span>`;
+        mapContext.innerHTML = `<strong>${current.province_name}</strong>`;
         prevButton.disabled = isFirstPage;
         nextButton.style.display = isLastPage ? "none" : "";
         proceedButton.style.display = isLastPage ? "" : "none";
@@ -1937,11 +1949,11 @@
 
         const municipality = currentWardMunicipalityInfo();
         if (!municipality) {
-            container.innerHTML = "<strong>Ward map</strong><span>Choose municipalities with knowledge above 5 to continue.</span>";
+            container.innerHTML = "<strong>Ward map</strong>";
             return;
         }
 
-        container.innerHTML = `<strong>${municipality.municipality_name}</strong><span>${municipality.province_name} | ${municipality.district_name} | Tap a ward name below to refocus the map.</span>`;
+        container.innerHTML = `<strong>${municipality.municipality_name}</strong>`;
     }
 
     function selectRegion(regionName, options = {}) {
@@ -1995,7 +2007,7 @@
 
         if (municipalities.length === 0) {
             titleEl.textContent = "No municipalities selected";
-            statusEl.textContent = "No ward pages are available yet.";
+            statusEl.textContent = "";
             updateStage3MapContext();
             prevButton.disabled = true;
             nextButton.style.display = "none";
@@ -2010,7 +2022,7 @@
         const isLastPage = state.currentWardMunicipalityIndex === municipalities.length - 1;
 
         titleEl.textContent = municipality.municipality_name;
-        statusEl.textContent = `Municipality ${pageNumber} of ${municipalities.length} | ${municipality.province_name} | ${municipality.district_name} | ${wards.length} wards`;
+        statusEl.textContent = "";
         updateStage3MapContext();
         prevButton.disabled = isFirstPage;
         nextButton.style.display = isLastPage ? "none" : "";
@@ -2351,8 +2363,6 @@
             return `
                 <div class="municipality-item${info.ward_id === state.selectedWardId ? " is-selected" : ""}" id="ward-row-${info.ward_id}" onclick="selectWardById('${info.ward_id}')">
                     <div class="municipality-name">Ward ${info.ward_no} (${info.ward_label})</div>
-                    <div class="municipality-meta">${info.municipality_name} | ${info.province_name} | ${info.district_name}</div>
-                    <div class="municipality-meta">Tap the ward name to refocus the map.</div>
                     <div class="rating-group">
                         <div class="rating-input">
                             <label for="ward-knowledge-${info.ward_id}">Knowledge (0-10)</label>
