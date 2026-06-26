@@ -302,6 +302,15 @@
             color: #ffffff;
         }
 
+        #stage1MapContext {
+            border-bottom: none;
+            background: #34495e;
+        }
+
+        #stage1MapContext strong {
+            color: #ffffff;
+        }
+
         #stage3MapContext {
             border-bottom: none;
             background: #2f6fb2;
@@ -727,12 +736,12 @@
             <div class="intro-copy">
                 <p>The goal of this survey is to better understand your perceptions of safety in South Africa.</p>
                 <ul class="intro-list">
-                    <li>The survey will first ask whether you have knowledge of each of the provinces in South Africa.</li>
-                    <li>We will then "zoom in" and ask you about safety in municipalities and wards.</li>
-                    <li>In general, we will ask you to tell us both how well you know a place (score out of 10) and how safe you think it is (score out of 10).</li>
-                    <li>For knowledge, a score of 5 means that you know the area moderately well, while a score of 7 or more means you have lived or worked there. A score of 3 or more means that you have visited the area at least once.</li>
-                    <li>For safety, a score of 5 means that if you think of all the municipalities in South Africa, this one has average safety. A score of 7 means you think it is quite safe, while a 10 means it is the safest place in all of South Africa (you could walk around with a gold watch and your headphones on).</li>
-                    <li><strong>Map interaction:</strong> tap a province, municipality, or ward name to locate it on the map and highlight it.</li>
+                    <li><strong>First:</strong> you will say whether you are familiar with each province in South Africa.</li>
+                    <li><strong>Then:</strong> the survey will zoom in and ask you to rate municipalities and wards inside the provinces you know.</li>
+                    <li><strong>Two scores for each place:</strong> you will rate both <strong>knowledge</strong> and <strong>safety</strong> from 0 to 10.</li>
+                    <li><strong>Knowledge score:</strong> 7 or more means you have lived or worked there, 5 means you know the area moderately well, and 3 or more means you have visited at least once.</li>
+                    <li><strong>Safety score:</strong> at the municipality and ward levels, rate the safety of the <strong>central CBD</strong>. A 5 means average safety across South Africa, 7 means quite safe, and 10 means the safest place in South Africa.</li>
+                    <li><strong>Maps:</strong> tap a province, municipality, or ward name to locate it on the map. The maps will be coloured by reported safety, with <strong>green = safer</strong> and <strong>red = less safe</strong>.</li>
                     <li><strong>Sliders:</strong> move each slider from 0 to 10. If knowledge is 0, the safety slider stays disabled.</li>
                     <li><strong>Progress:</strong> the survey saves on this phone so you can resume after an unexpected close or connection drop.</li>
                 </ul>
@@ -745,11 +754,10 @@
 
     <div class="survey-section" id="section-stage1">
         <div class="stage-reminder">
-            <p><strong>Province familiarity:</strong> tap a province name to find it on the map. Answer <strong>Yes</strong> only if you know at least some wards or neighbourhoods there well enough to continue.</p>
+            <p><strong>Select the province on the map or on the list to identify it.</strong> For each province, select whether you are familiar with any municipalities within it. Answer <strong>Yes</strong> if you have visited a municipality within that province.</p>
         </div>
         <div class="main-content">
             <div class="panel map-panel">
-                <div class="panel-header">Map View: Province Footprint</div>
                 <div class="map-context-banner" id="stage1MapContext"></div>
                 <div id="map-stage1"></div>
             </div>
@@ -780,10 +788,6 @@
             <div class="panel">
                 <div class="panel-header">Municipality Ratings</div>
                 <div class="panel-content stage-list-content" id="municipalityPanelContent">
-                    <div class="page-summary" id="municipalityPageSummary">
-                        <div class="page-title" id="municipalityPageTitle">Loading municipality...</div>
-                        <div class="page-status" id="municipalityPageStatus"></div>
-                    </div>
                     <div id="municipalityList">
                         <div class="loader"></div>
                         Loading data...
@@ -792,9 +796,7 @@
             </div>
         </div>
         <div class="button-group">
-            <div class="lock-warning" id="municipalityReviewWarning" style="display: none;">Please carefully check your answers. You can still go back and review earlier municipalities before proceeding.</div>
-            <button class="btn-secondary" id="municipalityPrevButton" onclick="goToMunicipalityPage(-1)">Previous Municipality</button>
-            <button class="btn-primary" id="municipalityNextButton" onclick="goToMunicipalityPage(1)">Next Municipality</button>
+            <div class="lock-warning" id="municipalityReviewWarning" style="display: none;">Please review your municipality answers before proceeding to ward details.</div>
             <button class="btn-primary" id="municipalityProceedButton" onclick="proceedToStage3()">Proceed to Ward Details</button>
         </div>
     </div>
@@ -1258,11 +1260,11 @@
     function getSafetyFillColor(safetyValue) {
         const safety = clamp(Number.isFinite(safetyValue) ? safetyValue : DEFAULT_SAFETY_RATING, 0, 10);
         const neutral = "#98a3ad";
-        const safeBlue = "#08519c";
+        const safeGreen = "#238b45";
         const unsafeRed = "#cb181d";
 
         if (safety === 5) return neutral;
-        if (safety > 5) return mixHexColors(neutral, safeBlue, (safety - 5) / 5);
+        if (safety > 5) return mixHexColors(neutral, safeGreen, (safety - 5) / 5);
         return mixHexColors(neutral, unsafeRed, (5 - safety) / 5);
     }
 
@@ -1777,7 +1779,7 @@
     }
 
     function focusStage2MapOnVisibleMunicipalities() {
-        const visibleIds = currentProvinceMunicipalityEntries().map(info => info.municipality_id);
+        const visibleIds = municipalityEntriesForCurrentStage().map(info => info.municipality_id);
         const features = municipalityFeaturesByIds(visibleIds);
         if (features.length === 0) return;
 
@@ -1904,48 +1906,29 @@
         if (!container) return;
 
         const regionName = state.selectedRegionName || state.region || "Select a province";
-        const regionInfo = regionEntries().find(info => info.region_name === regionName);
-        const subtitle = regionInfo
-            ? `${regionInfo.municipality_count} municipalities | ${regionInfo.district_count} districts | ${regionInfo.ward_count} wards`
-            : "Tap a province name to highlight it on the map.";
-
-        container.innerHTML = `<strong>${regionName}</strong><span>${subtitle}</span>`;
+        container.innerHTML = `<strong>${regionName}</strong>`;
     }
 
     function updateStage2PageControls() {
-        const titleEl = document.getElementById("municipalityPageTitle");
-        const statusEl = document.getElementById("municipalityPageStatus");
-        const prevButton = document.getElementById("municipalityPrevButton");
-        const nextButton = document.getElementById("municipalityNextButton");
         const proceedButton = document.getElementById("municipalityProceedButton");
         const reviewWarning = document.getElementById("municipalityReviewWarning");
         const mapContext = document.getElementById("stage2MapContext");
         const municipalities = municipalityEntriesForCurrentStage();
 
-        if (!titleEl || !statusEl || !prevButton || !nextButton || !proceedButton || !reviewWarning || !mapContext) return;
+        if (!proceedButton || !reviewWarning || !mapContext) return;
 
         if (municipalities.length === 0) {
-            titleEl.textContent = "No municipalities available";
-            statusEl.textContent = "Choose familiar provinces first.";
             mapContext.innerHTML = "<strong>Municipality map</strong><span>Choose familiar provinces to load municipality pages.</span>";
-            prevButton.disabled = true;
-            nextButton.style.display = "none";
             proceedButton.style.display = "none";
             reviewWarning.style.display = "none";
             return;
         }
 
-        const current = currentMunicipalityPageInfo();
-        const isFirstPage = state.currentMunicipalityPageIndex === 0;
-        const isLastPage = state.currentMunicipalityPageIndex === municipalities.length - 1;
+        const current = currentMunicipalityPageInfo() || municipalities[0];
 
-        titleEl.textContent = current.municipality_name;
-        statusEl.textContent = "";
         mapContext.innerHTML = `<strong>${current.province_name}</strong>`;
-        prevButton.disabled = isFirstPage;
-        nextButton.style.display = isLastPage ? "none" : "";
-        proceedButton.style.display = isLastPage ? "" : "none";
-        reviewWarning.style.display = isLastPage ? "" : "none";
+        proceedButton.style.display = "";
+        reviewWarning.style.display = "";
     }
 
     function updateStage3MapContext() {
@@ -2163,9 +2146,8 @@
             return `
                 <div class="municipality-item${info.region_name === state.selectedRegionName ? " is-selected" : ""}" id="region-row-${regionKey}" onclick="selectRegion('${info.region_name}')">
                     <div class="municipality-name">${info.region_name}${homeTag}</div>
-                    <div class="municipality-meta">${info.municipality_count} municipalities | ${info.district_count} districts | ${info.ward_count} wards</div>
                     <div class="rating-input">
-                        <label>Are you familiar with some wards/neighbourhoods in this province?</label>
+                        <label>Are you familiar with ${info.region_name}?</label>
                         <div class="familiarity-group">
                             <button type="button" class="familiarity-button is-yes${isFamiliar ? " is-active" : ""}" onclick="event.stopPropagation(); setRegionFamiliarity('${info.region_name}', true)">Yes</button>
                             <button type="button" class="familiarity-button is-no${!isFamiliar ? " is-active" : ""}" onclick="event.stopPropagation(); setRegionFamiliarity('${info.region_name}', false)">No</button>
@@ -2235,7 +2217,7 @@
     function updateStage2MapView() {
         if (!state.municipalityMap || !state.municipalityLayer) return;
 
-        const visibleIds = new Set(currentProvinceMunicipalityEntries().map(info => info.municipality_id));
+        const visibleIds = new Set(municipalityEntriesForCurrentStage().map(info => info.municipality_id));
         const currentMunicipality = currentMunicipalityPageInfo();
         if (currentMunicipality && (!state.selectedMunicipalityId || state.selectedMunicipalityId !== currentMunicipality.municipality_id)) {
             state.selectedMunicipalityId = currentMunicipality.municipality_id;
@@ -2264,37 +2246,41 @@
             return;
         }
 
-        const municipality = currentMunicipalityPageInfo();
-        if (!municipality) {
+        const municipalities = municipalityEntriesForCurrentStage();
+        if (municipalities.length === 0) {
             container.innerHTML = '<p style="color: #7f8c8d;">No municipalities match the selected provinces.</p>';
             updateStage2PageControls();
             return;
         }
 
-        state.selectedMunicipalityId = municipality.municipality_id;
-        const ratings = state.municipalityData[municipality.municipality_id] || defaultRatings();
+        if (!state.selectedMunicipalityId || !municipalities.some(info => info.municipality_id === state.selectedMunicipalityId)) {
+            state.selectedMunicipalityId = municipalities[0].municipality_id;
+        }
 
-        container.innerHTML = `
-            <div class="municipality-item is-selected" id="municipality-row-${municipality.municipality_id}" onclick="selectMunicipality('${municipality.municipality_id}')">
-                <div class="municipality-name">${municipality.municipality_name}</div>
-                <div class="municipality-meta">${municipality.province_name} | ${municipality.district_name} | ${municipality.ward_count} wards</div>
-                <div class="municipality-meta">Tap the municipality name to refocus the map.</div>
-                <div class="rating-group">
-                    <div class="rating-input">
-                        <label for="knowledge-${municipality.municipality_id}">Knowledge (0-10)</label>
-                        <input type="range" id="knowledge-${municipality.municipality_id}" min="0" max="10" value="${ratings.knowledge}"
-                               oninput="updateMunicipalityRating('${municipality.municipality_id}', 'knowledge', this.value)">
-                        <span class="rating-value" id="knowledge-value-${municipality.municipality_id}">${ratings.knowledge}</span>
-                    </div>
-                    <div class="rating-input">
-                        <label for="safety-${municipality.municipality_id}">CBD Safety (0-10)</label>
-                        <input type="range" id="safety-${municipality.municipality_id}" min="0" max="10" value="${ratings.safety}" ${safetyInputState(ratings.knowledge)}
-                               oninput="updateMunicipalityRating('${municipality.municipality_id}', 'safety', this.value)">
-                        <span class="rating-value" id="safety-value-${municipality.municipality_id}">${ratings.safety}</span>
+        container.innerHTML = municipalities.map(municipality => {
+            const ratings = state.municipalityData[municipality.municipality_id] || defaultRatings();
+            return `
+                <div class="municipality-item${municipality.municipality_id === state.selectedMunicipalityId ? " is-selected" : ""}" id="municipality-row-${municipality.municipality_id}" onclick="selectMunicipality('${municipality.municipality_id}')">
+                    <div class="municipality-name">${municipality.municipality_name}</div>
+                    <div class="municipality-meta">${municipality.province_name} | ${municipality.district_name}</div>
+                    <div class="municipality-meta">Tap the municipality name to refocus the map.</div>
+                    <div class="rating-group">
+                        <div class="rating-input">
+                            <label for="knowledge-${municipality.municipality_id}">Knowledge (0-10)</label>
+                            <input type="range" id="knowledge-${municipality.municipality_id}" min="0" max="10" value="${ratings.knowledge}"
+                                   oninput="updateMunicipalityRating('${municipality.municipality_id}', 'knowledge', this.value)">
+                            <span class="rating-value" id="knowledge-value-${municipality.municipality_id}">${ratings.knowledge}</span>
+                        </div>
+                        <div class="rating-input">
+                            <label for="safety-${municipality.municipality_id}">CBD Safety (0-10)</label>
+                            <input type="range" id="safety-${municipality.municipality_id}" min="0" max="10" value="${ratings.safety}" ${safetyInputState(ratings.knowledge)}
+                                   oninput="updateMunicipalityRating('${municipality.municipality_id}', 'safety', this.value)">
+                            <span class="rating-value" id="safety-value-${municipality.municipality_id}">${ratings.safety}</span>
+                        </div>
                     </div>
                 </div>
-            </div>
-        `;
+            `;
+        }).join("");
 
         updateStage2PageControls();
         syncMunicipalitySelectionState();
