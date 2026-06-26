@@ -266,6 +266,10 @@
             line-height: 1.4;
         }
 
+        .page-status:empty {
+            display: none;
+        }
+
         .map-panel {
             align-self: start;
         }
@@ -712,7 +716,6 @@
                 <input type="date" id="date">
             </div>
             <div class="button-group">
-                <div class="lock-warning">Please carefully check your answers, you won't be able to go back once you proceed to the next section.</div>
                 <button class="btn-primary" onclick="startSurvey()">Start Survey</button>
             </div>
         </div>
@@ -722,12 +725,15 @@
         <div class="enumerator-section intro-card">
             <h2 style="margin-bottom: 15px;">Before You Begin</h2>
             <div class="intro-copy">
-                <p>This page explains how the survey works. The questions start on the next screen.</p>
+                <p>The goal of this survey is to better understand your perceptions of safety in South Africa.</p>
                 <ul class="intro-list">
-                    <li><strong>Familiarity / knowledge thresholds:</strong> answer <strong>Yes</strong> to province familiarity only when you know at least some wards or neighbourhoods there well enough to continue. For area ratings, <strong>7+</strong> means you have lived or worked there, and <strong>3+</strong> means you have visited at least once.</li>
+                    <li>The survey will first ask whether you have knowledge of each of the provinces in South Africa.</li>
+                    <li>We will then "zoom in" and ask you about safety in municipalities and wards.</li>
+                    <li>In general, we will ask you to tell us both how well you know a place (score out of 10) and how safe you think it is (score out of 10).</li>
+                    <li>For knowledge, a score of 5 means that you know the area moderately well, while a score of 7 or more means you have lived or worked there. A score of 3 or more means that you have visited the area at least once.</li>
+                    <li>For safety, a score of 5 means that if you think of all the municipalities in South Africa, this one has average safety. A score of 7 means you think it is quite safe, while a 10 means it is the safest place in all of South Africa (you could walk around with a gold watch and your headphones on).</li>
                     <li><strong>Map interaction:</strong> tap a province, municipality, or ward name to locate it on the map and highlight it.</li>
                     <li><strong>Sliders:</strong> move each slider from 0 to 10. If knowledge is 0, the safety slider stays disabled.</li>
-                    <li><strong>Stage locks:</strong> once you proceed past a stage, you cannot go back to change earlier answers.</li>
                     <li><strong>Progress:</strong> the survey saves on this phone so you can resume after an unexpected close or connection drop.</li>
                 </ul>
             </div>
@@ -758,7 +764,6 @@
             </div>
         </div>
         <div class="button-group">
-            <div class="lock-warning">Please carefully check your answers, you won't be able to go back once you proceed to the next section.</div>
             <button class="btn-primary" onclick="proceedToStage2()">Proceed to Municipality Details</button>
         </div>
     </div>
@@ -787,7 +792,7 @@
             </div>
         </div>
         <div class="button-group">
-            <div class="lock-warning">Please carefully check your answers, you won't be able to go back once you proceed to the next section.</div>
+            <div class="lock-warning" id="municipalityReviewWarning" style="display: none;">Please carefully check your answers. You can still go back and review earlier municipalities before proceeding.</div>
             <button class="btn-secondary" id="municipalityPrevButton" onclick="goToMunicipalityPage(-1)">Previous Municipality</button>
             <button class="btn-primary" id="municipalityNextButton" onclick="goToMunicipalityPage(1)">Next Municipality</button>
             <button class="btn-primary" id="municipalityProceedButton" onclick="proceedToStage3()">Proceed to Ward Details</button>
@@ -814,7 +819,6 @@
             </div>
         </div>
         <div class="button-group">
-            <div class="lock-warning">You can move between municipality pages while rating wards, but you cannot go back to municipality ratings after you proceed here.</div>
             <button class="btn-secondary" id="wardPrevButton" onclick="goToWardMunicipalityPage(-1)">Previous Municipality</button>
             <button class="btn-primary" id="wardNextButton" onclick="goToWardMunicipalityPage(1)">Next Municipality</button>
             <button class="btn-success" id="wardCompleteButton" onclick="proceedToExport()">Complete, Send, or Export Data</button>
@@ -1583,7 +1587,7 @@
             document.getElementById("stageIndicator").textContent = "Stage 1 of 4: Province Familiarity";
         } else if (stage === 3) {
             document.getElementById("section-stage2").classList.add("active");
-            document.getElementById("stageIndicator").textContent = "Stage 2 of 4: Municipality Ratings (Familiar Provinces)";
+            document.getElementById("stageIndicator").textContent = "Stage 2 of 4: Municipality Ratings";
         } else if (stage === 4) {
             document.getElementById("section-stage3").classList.add("active");
             document.getElementById("stageIndicator").textContent = "Stage 3 of 4: Ward-Level Ratings (Knowledge > 5 only)";
@@ -1914,10 +1918,11 @@
         const prevButton = document.getElementById("municipalityPrevButton");
         const nextButton = document.getElementById("municipalityNextButton");
         const proceedButton = document.getElementById("municipalityProceedButton");
+        const reviewWarning = document.getElementById("municipalityReviewWarning");
         const mapContext = document.getElementById("stage2MapContext");
         const municipalities = municipalityEntriesForCurrentStage();
 
-        if (!titleEl || !statusEl || !prevButton || !nextButton || !proceedButton || !mapContext) return;
+        if (!titleEl || !statusEl || !prevButton || !nextButton || !proceedButton || !reviewWarning || !mapContext) return;
 
         if (municipalities.length === 0) {
             titleEl.textContent = "No municipalities available";
@@ -1926,21 +1931,21 @@
             prevButton.disabled = true;
             nextButton.style.display = "none";
             proceedButton.style.display = "none";
+            reviewWarning.style.display = "none";
             return;
         }
 
         const current = currentMunicipalityPageInfo();
-        const currentProvinceEntries = currentProvinceMunicipalityEntries();
-        const provincePageIndex = currentProvinceEntries.findIndex(info => info.municipality_id === current.municipality_id) + 1;
         const isFirstPage = state.currentMunicipalityPageIndex === 0;
         const isLastPage = state.currentMunicipalityPageIndex === municipalities.length - 1;
 
         titleEl.textContent = current.municipality_name;
-        statusEl.textContent = `Municipality ${state.currentMunicipalityPageIndex + 1} of ${municipalities.length} | ${current.province_name} | ${current.district_name} | ${current.ward_count} wards`;
+        statusEl.textContent = "";
         mapContext.innerHTML = `<strong>${current.province_name}</strong>`;
         prevButton.disabled = isFirstPage;
         nextButton.style.display = isLastPage ? "none" : "";
         proceedButton.style.display = isLastPage ? "" : "none";
+        reviewWarning.style.display = isLastPage ? "" : "none";
     }
 
     function updateStage3MapContext() {
