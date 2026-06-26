@@ -836,7 +836,7 @@
                 <div class="button-group">
                     <button class="btn-success" id="submitSurveyButton" onclick="submitSurveyToGoogleSheets()">Submit</button>
                 </div>
-                <p style="color: #555; margin-bottom: 15px;">Choose export format:</p>
+                <p style="color: #555; margin: 24px 0 15px;">Choose export format:</p>
                 <div class="button-group">
                     <button class="btn-primary" onclick="exportAsCSV()">Download as CSV</button>
                     <button class="btn-primary" onclick="exportAsJSON()">Download as JSON</button>
@@ -1702,7 +1702,44 @@
         updateStatus(`Ready for ward ratings in ${state.filteredMunicipalities.length} selected municipalities`);
     }
 
+    function wardsWithZeroKnowledge() {
+        const zeroKnowledgeWards = [];
+
+        selectedMunicipalityEntries().forEach(municipality => {
+            wardEntriesForMunicipality(municipality.municipality_id).forEach(ward => {
+                const knowledge = Number(state.wardData[ward.ward_id]?.knowledge ?? 0);
+                if (knowledge === 0) {
+                    zeroKnowledgeWards.push(ward);
+                }
+            });
+        });
+
+        return zeroKnowledgeWards;
+    }
+
     function proceedToExport() {
+        const zeroKnowledgeWards = wardsWithZeroKnowledge();
+        if (zeroKnowledgeWards.length > 0) {
+            const preview = zeroKnowledgeWards
+                .slice(0, 3)
+                .map(ward => `Ward ${ward.ward_no} in ${ward.municipality_name}`)
+                .join(", ");
+            const remainingCount = zeroKnowledgeWards.length - Math.min(zeroKnowledgeWards.length, 3);
+            const previewText = preview
+                ? `${preview}${remainingCount > 0 ? `, and ${remainingCount} more` : ""}. `
+                : "";
+
+            showConfirm(
+                "Wards Still At 0 Knowledge",
+                `${zeroKnowledgeWards.length} ward(s) still have knowledge scored as 0. ${previewText}Click Confirm to finalize anyway, or Cancel to review these wards.`,
+                () => {
+                    transitionToStage(5);
+                    updateStatus("Ready to send or export");
+                }
+            );
+            return;
+        }
+
         transitionToStage(5);
         updateStatus("Ready to send or export");
     }
@@ -2262,8 +2299,6 @@
             return `
                 <div class="municipality-item${municipality.municipality_id === state.selectedMunicipalityId ? " is-selected" : ""}" id="municipality-row-${municipality.municipality_id}" onclick="selectMunicipality('${municipality.municipality_id}')">
                     <div class="municipality-name">${municipality.municipality_name}</div>
-                    <div class="municipality-meta">${municipality.province_name} | ${municipality.district_name}</div>
-                    <div class="municipality-meta">Tap the municipality name to refocus the map.</div>
                     <div class="rating-group">
                         <div class="rating-input">
                             <label for="knowledge-${municipality.municipality_id}">Knowledge (0-10)</label>
